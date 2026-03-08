@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Intelli-Credit | AI Credit Appraisal Engine</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --bg-deep:        #f0fdff;
+        --bg-dark:        #e0f9fd;
+        --electric-blue:  #36cceb;
+        --electric-purple:#0891b2;
+        --neon-green:     #059669;
+        --neon-amber:     #D97706;
+        --neon-red:       #DC2626;
+        --glass-bg:       rgba(255,255,255,0.92);
+        --glass-border:   rgba(54,204,235,0.18);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        background: #f0fdff;
+        color: #0F172A;
+        overflow-x: hidden;
+      }
+
+      /* ── Keyframes ─────────────────────────────────────── */
+      @keyframes float {
+        0%,100% { transform: translateY(0) translateX(0); }
+        33%      { transform: translateY(-18px) translateX(8px); }
+        66%      { transform: translateY(-8px) translateX(-10px); }
+      }
+      @keyframes fadeInUp {
+        from { opacity:0; transform:translateY(28px); }
+        to   { opacity:1; transform:translateY(0); }
+      }
+      @keyframes fadeIn {
+        from { opacity:0; } to { opacity:1; }
+      }
+      @keyframes shimmer {
+        0%   { background-position:-1200px 0; }
+        100% { background-position: 1200px 0; }
+      }
+      @keyframes gradient-shift {
+        0%,100% { background-position:0% 50%; }
+        50%      { background-position:100% 50%; }
+      }
+      @keyframes spin-slow  { from{transform:rotate(0deg);}   to{transform:rotate(360deg);}  }
+      @keyframes spin-slower{ from{transform:rotate(360deg);} to{transform:rotate(0deg);}  }
+      @keyframes glow-blue {
+        0%,100%{ box-shadow:0 4px 20px rgba(54,204,235,.22),0 0 0 3px rgba(54,204,235,.07); }
+        50%    { box-shadow:0 8px 32px rgba(54,204,235,.42),0 0 0 5px rgba(54,204,235,.13); }
+      }
+      @keyframes glow-green {
+        0%,100%{ box-shadow:0 4px 20px rgba(5,150,105,.2),0 0 0 3px rgba(5,150,105,.06); }
+        50%    { box-shadow:0 8px 32px rgba(5,150,105,.38),0 0 0 5px rgba(5,150,105,.10); }
+      }
+      @keyframes glow-amber {
+        0%,100%{ box-shadow:0 4px 20px rgba(217,119,6,.2),0 0 0 3px rgba(217,119,6,.06); }
+        50%    { box-shadow:0 8px 32px rgba(217,119,6,.38),0 0 0 5px rgba(217,119,6,.10); }
+      }
+      @keyframes glow-red {
+        0%,100%{ box-shadow:0 4px 20px rgba(220,38,38,.2),0 0 0 3px rgba(220,38,38,.06); }
+        50%    { box-shadow:0 8px 32px rgba(220,38,38,.38),0 0 0 5px rgba(220,38,38,.10); }
+      }
+      @keyframes border-dance {
+        0%,100%{ border-color:rgba(59,130,246,.3); }
+        50%    { border-color:rgba(139,92,246,.7); }
+      }
+      @keyframes score-draw {
+        from { stroke-dashoffset: 565; }
+      }
+      @keyframes pulse-dot {
+        0%,100%{ transform:scale(1);opacity:.8; }
+        50%    { transform:scale(1.6);opacity:.3; }
+      }
+      @keyframes slide-right {
+        from{ transform:translateX(-100%);opacity:0; }
+        to  { transform:translateX(0);opacity:1; }
+      }
+      @keyframes bar-grow {
+        from{ width:0; }
+      }
+      @keyframes number-pop {
+        0%  { transform:scale(.7);opacity:0; }
+        70% { transform:scale(1.08); }
+        100%{ transform:scale(1);opacity:1; }
+      }
+
+      /* ── Utility classes ──────────────────────────────── */
+      .glass {
+        background: #FFFFFF;
+        border: 1px solid #d0f5fb;
+        box-shadow: 0 2px 12px rgba(54,204,235,.08);
+        border-radius: 16px;
+      }
+      .glass-hover {
+        transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+      }
+      .glass-hover:hover {
+        transform: translateY(-3px);
+        border-color: rgba(54,204,235,.4);
+        box-shadow: 0 10px 32px rgba(54,204,235,.16);
+      }
+      .gradient-text {
+        background: linear-gradient(135deg,#36cceb,#0891b2);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .gradient-text-green {
+        background: linear-gradient(135deg,#059669,#10B981);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .gradient-bg {
+        background: linear-gradient(135deg,#36cceb,#0891b2,#36cceb);
+        background-size: 300% 300%;
+        animation: gradient-shift 8s ease infinite;
+      }
+      .glow-blue   { animation: glow-blue  2.5s ease-in-out infinite; }
+      .glow-green  { animation: glow-green 2.5s ease-in-out infinite; }
+      .glow-amber  { animation: glow-amber 2.5s ease-in-out infinite; }
+      .glow-red    { animation: glow-red   2.5s ease-in-out infinite; }
+      .fade-in-up  { animation: fadeInUp .55s ease both; }
+      .fade-in     { animation: fadeIn   .4s  ease both; }
+      .shimmer-bar {
+        background: linear-gradient(90deg,#e0f9fd 25%,#a5f0f9 50%,#e0f9fd 75%);
+        background-size: 1200px 100%;
+        animation: shimmer 1.8s infinite linear;
+      }
+      .score-ring  { animation: score-draw .9s cubic-bezier(.4,0,.2,1) both; }
+      .bar-animate { animation: bar-grow .8s cubic-bezier(.4,0,.2,1) both; }
+      .num-pop     { animation: number-pop .5s ease both; }
+
+      /* scrollbar */
+      ::-webkit-scrollbar       { width:5px; }
+      ::-webkit-scrollbar-track { background:#f0fdff; }
+      ::-webkit-scrollbar-thumb { background:rgba(54,204,235,.3);border-radius:3px; }
+      ::-webkit-scrollbar-thumb:hover { background:rgba(54,204,235,.6); }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

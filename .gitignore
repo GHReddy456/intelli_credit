@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+
+# Models / large binaries
+models/artifacts/*.pkl
+models/artifacts/*.joblib
+models/artifacts/*.h5
+models/artifacts/*.pt
+models/artifacts/*.bin
+
+# Uploads & outputs (user data — keep structure, not content)
+uploads/*/
+!uploads/.gitkeep
+uploads/jobs/
+
+# CAM outputs (generated)
+cam_outputs/*.pdf
+
+# Node
+frontend/node_modules/
+frontend/build/
+.npm/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Secrets / env
+.env
+*.env
+*.secret
+
+# Logs
+*.log
+logfile*
+
+# Pytest
+.pytest_cache/
+htmlcov/
+.coverage

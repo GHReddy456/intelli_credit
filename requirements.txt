@@ -1,0 +1,56 @@
+# ============================================================
+# INTELLI-CREDIT v2 — Streamlined Requirements
+# Architecture: FastAPI + XGBoost + SHAP + NetworkX + ReportLab
+# Zero API keys required. Ollama optional.
+# ============================================================
+
+# ── Core API ─────────────────────────────────────────────────
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.4.0
+aiofiles>=23.2.1
+
+# ── PDF Processing ────────────────────────────────────────────
+PyMuPDF>=1.23.0
+pdfplumber>=0.10.2
+Pillow>=10.0.0
+
+# ── OCR (optional — requires tesseract system binary) ─────────
+pytesseract>=0.3.10
+pdf2image>=1.16.3
+opencv-python-headless>=4.8.0
+
+# ── ML / Explainability ───────────────────────────────────────
+scikit-learn>=1.3.0
+xgboost>=2.0.0
+shap>=0.43.0
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.11.0
+
+# ── Visualisation (SHAP chart in CAM PDF) ────────────────────
+matplotlib>=3.7.0
+
+# ── Graph ─────────────────────────────────────────────────────
+networkx>=3.1
+
+# ── Web Research (zero API key) ───────────────────────────────
+duckduckgo-search>=3.9.3
+newspaper3k>=0.2.8
+requests>=2.31.0
+beautifulsoup4>=4.12.2
+lxml>=4.9.0
+httpx>=0.25.0
+
+# ── PDF Generation (CAM) ─────────────────────────────────────
+reportlab>=4.0.4
+
+# ── Utilities ─────────────────────────────────────────────────
+loguru>=0.7.0
+python-dotenv>=1.0.0
+pyyaml>=6.0.0
+tenacity>=8.2.0
+
+# ── LLM — OPTIONAL (uncomment if using Ollama locally) ───────
+# ollama>=0.1.7
