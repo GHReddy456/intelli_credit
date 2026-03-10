@@ -62,7 +62,7 @@ class RuleEngine:
             val = features.get(feat, 0.0)
             if self._evaluate(val, op, thr):
                 msg = msg_template.format(val=val, thr=thr)
-                risk_flags.append({"rule": feat, "severity": "MEDIUM", "message": msg, "type": "POLICY_FLAG"})
+                risk_flags.append({"rule": feat, "severity": "MEDIUM", "message": msg, "type": "POLICY_FLAG", "deduction": deduction})
                 policy_deductions += deduction
 
         policy_score = max(100 - policy_deductions, 0)

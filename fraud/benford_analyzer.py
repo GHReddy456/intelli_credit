@@ -30,13 +30,14 @@ class BenfordAnalyzer:
     def analyze(self, segmented_docs: List, tables: List[Dict]) -> Dict[str, Any]:
         amounts = self._collect_amounts(segmented_docs, tables)
 
-        if len(amounts) < 30:
-            logger.warning(f"[Benford] Only {len(amounts)} amounts — insufficient for reliable test")
+        if len(amounts) < 100:
+            logger.warning(f"[Benford] Only {len(amounts)} amounts — insufficient for reliable test (need ≥100)")
             return {
                 "benford_deviation_score": 0.0,
                 "chi2_statistic":          0.0,
                 "sample_size":             len(amounts),
                 "status":                  "insufficient_data",
+                "message":                 f"Insufficient transaction data for Benford analysis ({len(amounts)} of 100 required)",
                 "flags":                   [],
             }
 

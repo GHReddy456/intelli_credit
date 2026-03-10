@@ -136,9 +136,16 @@ class DocumentSegmenter:
     RED_FLAG_PATTERNS = [
         (r"emphasis of matter",             "AUDIT: Emphasis of Matter"),
         (r"qualified opinion",              "AUDIT: Qualified Opinion"),
+        (r"basis for qualified",            "AUDIT: Basis for Qualified Opinion"),
         (r"unable to obtain sufficient",    "AUDIT: Scope limitation"),
         (r"going concern",                  "AUDIT: Going concern doubt"),
         (r"material uncertainty",           "AUDIT: Material uncertainty"),
+        (r"material weakness",              "AUDIT: Material weakness in internal controls"),
+        (r"adverse opinion",                "AUDIT: Adverse Opinion"),
+        (r"caro\b|companies auditor.s report", "AUDIT: CARO qualification"),
+        (r"reconciliation.*differ|differ.*reconciliation", "AUDIT: Reconciliation difference"),
+        (r"non.compliance.*(?:act|regulation|rule)|(?:act|regulation|rule).*non.compliance",
+                                            "AUDIT: Non-compliance with regulations"),
         (r"wilful default(?:er)?",          "LEGAL: Wilful defaulter"),
         (r"non.performing asset|npa",       "CREDIT: NPA classification"),
         (r"insolvency.*proceedings|ibc",    "LEGAL: Insolvency proceedings"),
@@ -155,6 +162,23 @@ class DocumentSegmenter:
         (r"restructur|one time settlement|ots", "CREDIT: Restructuring/OTS"),
         (r"suit filed|recovery suit|legal action", "LEGAL: Recovery suit"),
         (r"attachment.*order|order.*attachment", "LEGAL: Attachment order"),
+    ]
+
+    # Structured auditor remark patterns (returns {type, keyword, severity})
+    _AUDIT_REMARK_PATTERNS = [
+        (re.compile(r"qualified opinion",            re.IGNORECASE), "QUALIFIED_OPINION",       "HIGH"),
+        (re.compile(r"basis for qualified",          re.IGNORECASE), "QUALIFIED_OPINION",       "HIGH"),
+        (re.compile(r"adverse opinion",              re.IGNORECASE), "ADVERSE_OPINION",         "CRITICAL"),
+        (re.compile(r"going concern",                re.IGNORECASE), "GOING_CONCERN",           "CRITICAL"),
+        (re.compile(r"material uncertainty",         re.IGNORECASE), "GOING_CONCERN",           "CRITICAL"),
+        (re.compile(r"emphasis of matter",           re.IGNORECASE), "EMPHASIS_OF_MATTER",      "MEDIUM"),
+        (re.compile(r"material weakness",            re.IGNORECASE), "MATERIAL_WEAKNESS",       "HIGH"),
+        (re.compile(r"scope.?limitation|unable to obtain sufficient", re.IGNORECASE), "SCOPE_LIMITATION", "HIGH"),
+        (re.compile(r"caro\b|companies auditor.?s report order", re.IGNORECASE), "CARO_QUALIFICATION", "MEDIUM"),
+        (re.compile(r"reconciliation.*differ|differ.*reconciliation", re.IGNORECASE), "RECONCILIATION_DIFFERENCE", "MEDIUM"),
+        (re.compile(r"non.compliance.*(?:act|regulation|rule)|(?:act|regulation).*non.compliance", re.IGNORECASE), "NON_COMPLIANCE", "HIGH"),
+        (re.compile(r"internal financial controls.*(?:inadequate|deficient|not adequate)", re.IGNORECASE), "INTERNAL_CONTROL_DEFICIENCY", "HIGH"),
+        (re.compile(r"provision.*not made|not provided for|not provisioned", re.IGNORECASE), "UNDER_PROVISIONING", "MEDIUM"),
     ]
 
     # Indian financial figure patterns
@@ -235,17 +259,47 @@ class DocumentSegmenter:
         # Step 4: Include table data as extra financial figures
         table_figures = self._extract_table_figures(parsed_doc.tables)
 
-        # Step 5: Global aggregation
-        all_figs = [fig for sec in sections for fig in sec.financial_figures] + table_figures
+        # Step 5: Include structured financial_data from PDFParser (already absolute values)
+        parser_figures = self._extract_parser_financial_data(parsed_doc)
+
+        # Step 6: Structured auditor remarks (for fraud/feature engines)
+        # Scan all meaningful section types; fall back to full-doc text if needed.
+        _AUDIT_SECTION_LABELS = (
+            "auditors_report", "directors_report", "unclassified",
+            "notes_to_accounts", "management_discussion", "corporate_overview",
+            "annual_report",
+        )
+        audit_remarks = self._extract_audit_remarks(
+            "\n".join(s.raw_text for s in sections
+                      if s.label in _AUDIT_SECTION_LABELS)
+        )
+        # Full-document fallback when section classification missed the auditor page
+        if not audit_remarks:
+            audit_remarks = self._extract_audit_remarks(parsed_doc.text_content or "")
+        # Merge legacy audit_qualifications field from PDFParser (avoids duplicates by type)
+        _seen_types = {r["type"] for r in audit_remarks}
+        for q in (parsed_doc.financial_data or {}).get("audit_qualifications", []):
+            rtype = "QUALIFIED_OPINION"
+            if rtype not in _seen_types:
+                audit_remarks.append({
+                    "type": rtype,
+                    "severity": "HIGH",
+                    "context": q.get("context", ""),
+                })
+                _seen_types.add(rtype)
+
+        # Step 7: Global aggregation
+        all_figs = [fig for sec in sections for fig in sec.financial_figures] + table_figures + parser_figures
         all_flags = list({flag for sec in sections for flag in sec.flags})
         global_entities = self._merge_entities(sections)
         section_index = {sec.label: sec for sec in reversed(sections)}  # last wins
 
         segment_summary = self._build_summary(sections, all_figs, all_flags, parsed_doc)
+        segment_summary["audit_remarks"] = audit_remarks
 
         logger.info(
             f"[Segmenter] Done: {len(sections)} sections, "
-            f"{len(all_figs)} figures, {len(all_flags)} flags"
+            f"{len(all_figs)} figures ({len(parser_figures)} from parser), {len(all_flags)} flags"
         )
 
         return SegmentedDocument(
@@ -332,6 +386,21 @@ class DocumentSegmenter:
 
     # ─── BLOCK CLASSIFICATION ─────────────────────────────────────────────────
 
+    # Fallback header patterns when keyword match fails — catches common headers
+    _HEADER_FALLBACKS = [
+        (re.compile(r"balance\s*sheet|statement of.*assets", re.IGNORECASE), "balance_sheet"),
+        (re.compile(r"profit\s*(?:&|and)\s*loss|income\s*statement|statement of.*(?:income|P&L)", re.IGNORECASE), "profit_loss"),
+        (re.compile(r"cash\s*flow", re.IGNORECASE), "cash_flow"),
+        (re.compile(r"auditor.?s?\s*report|independent\s*auditor", re.IGNORECASE), "auditors_report"),
+        (re.compile(r"director.?s?\s*report", re.IGNORECASE), "directors_report"),
+        (re.compile(r"notes\s*(to|on)\s*(the\s*)?(?:financial|account)", re.IGNORECASE), "notes_to_accounts"),
+        (re.compile(r"related\s*party", re.IGNORECASE), "related_party"),
+        (re.compile(r"contingent\s*liabilit", re.IGNORECASE), "contingent_liabilities"),
+        (re.compile(r"corporate\s*governance", re.IGNORECASE), "corporate_governance"),
+        (re.compile(r"management.*discussion|md\s*&\s*a", re.IGNORECASE), "management_discussion"),
+        (re.compile(r"schedule.*(?:borrowing|debt|loan|fixed\s*asset)", re.IGNORECASE), "notes_to_accounts"),
+    ]
+
     def _classify_blocks(self, blocks: List[Dict], schema: List[Dict]) -> List[DocumentSection]:
         """Match each block to a section label."""
         sections: List[DocumentSection] = []
@@ -350,6 +419,15 @@ class DocumentSegmenter:
 
             # Confidence: 1 keyword = 0.5, 2 = 0.75, 3+ = 0.95
             confidence = min(0.5 + (best_score - 1) * 0.25, 0.95) if best_score > 0 else 0.15
+
+            # Fallback: try header-based patterns if keyword match gave "unclassified"
+            if best_label == "unclassified":
+                header_text = blk["text"][:300]  # check first 300 chars for headers
+                for pat, label in self._HEADER_FALLBACKS:
+                    if pat.search(header_text):
+                        best_label = label
+                        confidence = 0.55
+                        break
 
             sections.append(DocumentSection(
                 label=best_label,
@@ -457,6 +535,57 @@ class DocumentSegmenter:
 
         return figures
 
+    # Mapping from PDFParser financial_data keys → SegmentedDocument canonical labels
+    _PARSER_TO_CANON: Dict[str, str] = {
+        # Annual report keys
+        "revenue":             "revenue",
+        "ebitda":              "ebitda",
+        "pat":                 "pat",
+        "total_debt":          "total_debt",
+        "equity":              "net_worth",
+        "current_assets":      "current_assets",
+        "current_liabilities": "current_liab",
+        # GST keys
+        "gstr1_turnover":      "gst_turnover",
+        "itc_claimed":         "itc",
+        # ITR keys
+        "gross_total_income":  "revenue",
+        "taxable_income":      "revenue",
+    }
+
+    def _extract_parser_financial_data(self, parsed_doc: "ParsedDocument") -> List[Dict]:
+        """
+        Convert PDFParser's structured financial_data into the all_financial_figures
+        format so the FeatureEngine and verification engines can use it.
+        Values from PDFParser are already in absolute rupees (Cr/Lakh multiplied).
+        We mark them type='currency' and unit='_parsed' (truthy) so the
+        FeatureEngine's unit-filter accepts them.
+        """
+        figures: List[Dict] = []
+        fd = getattr(parsed_doc, "financial_data", None)
+        if not isinstance(fd, dict):
+            return figures
+
+        for key, val in fd.items():
+            if val is None or not isinstance(val, (int, float)) or val <= 0:
+                continue
+            canon = self._PARSER_TO_CANON.get(key)
+            if not canon:
+                continue
+            figures.append({
+                "label":           key,
+                "canonical_label": canon,
+                "raw_value":       val,
+                "unit":            "_parsed",   # truthy → passes unit filter; already absolute
+                "absolute_value":  val,
+                "type":            "currency",
+                "context":         f"PDFParser structured extraction: {key}",
+            })
+
+        if figures:
+            logger.debug(f"[Segmenter] Parser financial figures: {[f['label'] for f in figures]}")
+        return figures
+
     def _normalise_label(self, raw: str) -> str:
         """Clean and normalise a label string."""
         cleaned = re.sub(r"\s+", " ", raw).strip().lower()
@@ -511,6 +640,30 @@ class DocumentSegmenter:
             if compiled_re.search(text):
                 flags.append(flag_label)
         return flags
+
+    def _extract_audit_remarks(self, text: str) -> List[Dict[str, str]]:
+        """
+        Return structured audit remark objects from auditor's report / directors' report text.
+        Each remark includes: type, severity, and up to 200 chars of context.
+        De-duped by remark type so the same qualification isn't listed N times.
+        """
+        remarks: List[Dict[str, str]] = []
+        seen_types: set = set()
+        for pattern, remark_type, severity in self._AUDIT_REMARK_PATTERNS:
+            if remark_type in seen_types:
+                continue
+            m = pattern.search(text)
+            if m:
+                start = max(0, m.start() - 80)
+                end   = min(len(text), m.end() + 120)
+                ctx   = re.sub(r"\s+", " ", text[start:end]).strip()
+                remarks.append({
+                    "type":     remark_type,
+                    "severity": severity,
+                    "context":  ctx,
+                })
+                seen_types.add(remark_type)
+        return remarks
 
     # ─── ENTITY MERGING ───────────────────────────────────────────────────────
 

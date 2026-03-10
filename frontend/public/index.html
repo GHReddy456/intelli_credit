@@ -9,15 +9,18 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       :root {
-        --bg-deep:        #f0fdff;
-        --bg-dark:        #e0f9fd;
-        --electric-blue:  #36cceb;
-        --electric-purple:#0891b2;
-        --neon-green:     #059669;
+        --bg-deep:        #080402;
+        --bg-dark:        #050201;
+        --electric-blue:  #ec5b13;
+        --electric-purple:#d4420a;
+        --neon-green:     #c73d08;
         --neon-amber:     #D97706;
         --neon-red:       #DC2626;
-        --glass-bg:       rgba(255,255,255,0.92);
-        --glass-border:   rgba(54,204,235,0.18);
+        --glass-bg:       rgba(34,22,16,0.88);
+        --glass-border:   rgba(236,91,19,0.22);
+        --accent:         #ec5b13;
+        --accent-light:   rgba(236,91,19,0.15);
+        --heading:        #f97316;
       }
 
       * { box-sizing: border-box; }
@@ -25,9 +28,10 @@
       body {
         margin: 0;
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        background: #f0fdff;
-        color: #0F172A;
+        background: #080402;
+        color: #f1f5f9;
         overflow-x: hidden;
+        min-height: 100vh;
       }
 
       /* ── Keyframes ─────────────────────────────────────── */
@@ -54,12 +58,12 @@
       @keyframes spin-slow  { from{transform:rotate(0deg);}   to{transform:rotate(360deg);}  }
       @keyframes spin-slower{ from{transform:rotate(360deg);} to{transform:rotate(0deg);}  }
       @keyframes glow-blue {
-        0%,100%{ box-shadow:0 4px 20px rgba(54,204,235,.22),0 0 0 3px rgba(54,204,235,.07); }
-        50%    { box-shadow:0 8px 32px rgba(54,204,235,.42),0 0 0 5px rgba(54,204,235,.13); }
+        0%,100%{ box-shadow:0 4px 20px rgba(8,145,178,.22),0 0 0 3px rgba(8,145,178,.07); }
+        50%    { box-shadow:0 8px 32px rgba(8,145,178,.42),0 0 0 5px rgba(8,145,178,.13); }
       }
       @keyframes glow-green {
-        0%,100%{ box-shadow:0 4px 20px rgba(5,150,105,.2),0 0 0 3px rgba(5,150,105,.06); }
-        50%    { box-shadow:0 8px 32px rgba(5,150,105,.38),0 0 0 5px rgba(5,150,105,.10); }
+        0%,100%{ box-shadow:0 4px 20px rgba(236,91,19,.22),0 0 0 3px rgba(236,91,19,.07); }
+        50%    { box-shadow:0 8px 32px rgba(236,91,19,.42),0 0 0 5px rgba(236,91,19,.13); }
       }
       @keyframes glow-amber {
         0%,100%{ box-shadow:0 4px 20px rgba(217,119,6,.2),0 0 0 3px rgba(217,119,6,.06); }
@@ -95,9 +99,9 @@
 
       /* ── Utility classes ──────────────────────────────── */
       .glass {
-        background: #FFFFFF;
-        border: 1px solid #d0f5fb;
-        box-shadow: 0 2px 12px rgba(54,204,235,.08);
+        background: rgba(34,22,16,0.82);
+        border: 1px solid rgba(236,91,19,0.18);
+        box-shadow: 0 2px 14px rgba(0,0,0,.35);
         border-radius: 16px;
       }
       .glass-hover {
@@ -105,11 +109,11 @@
       }
       .glass-hover:hover {
         transform: translateY(-3px);
-        border-color: rgba(54,204,235,.4);
-        box-shadow: 0 10px 32px rgba(54,204,235,.16);
+        border-color: rgba(236,91,19,.42);
+        box-shadow: 0 10px 32px rgba(236,91,19,.18);
       }
       .gradient-text {
-        background: linear-gradient(135deg,#36cceb,#0891b2);
+        background: linear-gradient(135deg,#ec5b13,#f97316);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
@@ -121,7 +125,7 @@
         background-clip: text;
       }
       .gradient-bg {
-        background: linear-gradient(135deg,#36cceb,#0891b2,#36cceb);
+        background: linear-gradient(135deg,#ec5b13,#d4420a,#ec5b13);
         background-size: 300% 300%;
         animation: gradient-shift 8s ease infinite;
       }
@@ -132,7 +136,7 @@
       .fade-in-up  { animation: fadeInUp .55s ease both; }
       .fade-in     { animation: fadeIn   .4s  ease both; }
       .shimmer-bar {
-        background: linear-gradient(90deg,#e0f9fd 25%,#a5f0f9 50%,#e0f9fd 75%);
+        background: linear-gradient(90deg,rgba(236,91,19,.12) 25%,rgba(249,115,22,.22) 50%,rgba(236,91,19,.12) 75%);
         background-size: 1200px 100%;
         animation: shimmer 1.8s infinite linear;
       }
@@ -142,9 +146,55 @@
 
       /* scrollbar */
       ::-webkit-scrollbar       { width:5px; }
-      ::-webkit-scrollbar-track { background:#f0fdff; }
-      ::-webkit-scrollbar-thumb { background:rgba(54,204,235,.3);border-radius:3px; }
-      ::-webkit-scrollbar-thumb:hover { background:rgba(54,204,235,.6); }
+      ::-webkit-scrollbar-track { background:#080402; }
+      ::-webkit-scrollbar-thumb { background:rgba(236,91,19,.35);border-radius:3px; }
+      ::-webkit-scrollbar-thumb:hover { background:rgba(236,91,19,.6); }
+
+      /* ── LIGHT MODE (applied via body.lt-mode) ─────────────── */
+      body.lt-mode {
+        background: #fdf8f2;
+        color: #1a0e06;
+      }
+      body.lt-mode ::-webkit-scrollbar-track { background:#fdf8f2; }
+      body.lt-mode ::-webkit-scrollbar-thumb { background:rgba(236,91,19,.4);border-radius:3px; }
+
+      /* Glass cards go white */
+      body.lt-mode .glass {
+        background: rgba(255,255,255,0.92) !important;
+        border: 1px solid rgba(236,91,19,0.18) !important;
+        box-shadow: 0 2px 14px rgba(0,0,0,.06) !important;
+      }
+      body.lt-mode .glass-hover:hover {
+        border-color: rgba(236,91,19,.42) !important;
+        box-shadow: 0 10px 32px rgba(236,91,19,.13) !important;
+      }
+
+      /* Shimmer bar in light mode */
+      body.lt-mode .shimmer-bar {
+        background: linear-gradient(90deg,rgba(236,91,19,.07) 25%,rgba(249,115,22,.14) 50%,rgba(236,91,19,.07) 75%);
+        background-size: 1200px 100%;
+        animation: shimmer 1.8s infinite linear;
+      }
+
+      /* Override the hardcoded dark-bg CSS variable */
+      body.lt-mode { --bg-deep: #fdf8f2; --bg-dark: #f4ede4; --glass-bg: rgba(255,255,255,0.92); --glass-border: rgba(236,91,19,0.2); }
+
+      /* Tab bar + sticky headers in light mode */
+      body.lt-mode [data-tabbar] {
+        background: rgba(255,255,255,0.95) !important;
+        border-bottom: 1px solid rgba(236,91,19,0.18) !important;
+      }
+
+      /* Particle orbs toned down in light mode */
+      body.lt-mode [data-particles] { opacity: 0.08 !important; }
+
+      /* Universal card bg in analysis views */
+      body.lt-mode [data-card] {
+        background: rgba(255,255,255,0.96) !important;
+        border-color: rgba(236,91,19,0.15) !important;
+        color: #1a0e06 !important;
+      }
+      body.lt-mode [data-card] * { color: inherit; }
     </style>
   </head>
   <body>

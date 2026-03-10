@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from loguru import logger
+from ingestion.numeric_normalizer import parse_indian_currency
 
 
 # ── Canonical financial metric aliases ──────────────────────────────────────
@@ -25,17 +26,36 @@ METRIC_ALIASES: Dict[str, List[str]] = {
     # Balance sheet
     "total_assets":         ["total assets"],
     "fixed_assets":         ["fixed assets", "ppne", "property plant equipment", "net block"],
-    "current_assets":       ["current assets", "total current assets"],
-    "inventories":          ["inventories", "inventory", "stock"],
-    "receivables":          ["trade receivables", "debtors", "accounts receivable"],
-    "cash":                 ["cash and cash equivalents", "cash and bank", "cash equivalents"],
+    "current_assets":       ["current assets", "total current assets",
+                             "total current assets (a)", "current assets (a)",
+                             "ii current assets"],
+    "inventories":          ["inventories", "inventory", "stock", "stock-in-trade",
+                             "finished goods", "raw materials", "work-in-progress", "wip",
+                             "(a) inventories", "(i) inventories"],
+    "receivables":          ["trade receivables", "debtors", "accounts receivable",
+                             "sundry debtors", "book debts", "bills receivable",
+                             "(b) trade receivables", "(ii) trade receivables"],
+    "cash":                 ["cash and cash equivalents", "cash and bank", "cash equivalents",
+                             "bank balance", "cash in hand",
+                             "(c) cash and cash equivalents", "(iv) cash"],
     "total_liabilities":    ["total liabilities"],
-    "equity":               ["shareholders equity", "net worth", "total equity", "equity share capital and reserves"],
-    "long_term_debt":       ["long term borrowings", "long-term debt", "term loans"],
-    "short_term_debt":      ["short term borrowings", "short-term debt", "working capital loans"],
-    "total_debt":           ["total debt", "total borrowings"],
-    "current_liabilities":  ["current liabilities", "total current liabilities"],
-    "trade_payables":       ["trade payables", "creditors", "accounts payable"],
+    "equity":               ["shareholders equity", "net worth", "total equity",
+                             "equity share capital and reserves", "shareholders funds",
+                             "reserves and surplus", "total equity and liabilities",
+                             "equity and liabilities", "net worth (a+b)"],
+    "long_term_debt":       ["long term borrowings", "long-term debt", "term loans",
+                             "non-current borrowings", "non current borrowings",
+                             "(a) long term borrowings"],
+    "short_term_debt":      ["short term borrowings", "short-term debt", "working capital loans",
+                             "cash credit", "overdraft", "bank overdraft",
+                             "(a) short term borrowings", "(i) short-term borrowings"],
+    "total_debt":           ["total debt", "total borrowings",
+                             "total indebtedness", "aggregate borrowings"],
+    "current_liabilities":  ["current liabilities", "total current liabilities",
+                             "total current liabilities (b)", "current liabilities (b)",
+                             "ii current liabilities and provisions"],
+    "trade_payables":       ["trade payables", "creditors", "accounts payable",
+                             "sundry creditors", "other payables", "bills payable"],
     # Cash flow
     "cfo":                  ["cash from operations", "operating cash flow", "net cash from operating"],
     "cfi":                  ["investing activities", "net cash from investing", "capex"],
@@ -110,12 +130,34 @@ class TableExtractor:
         return {"headers": headers, "rows": rows}
 
     # ── Financial mapping ─────────────────────────────────────────────────
+    def _detect_table_scale(self, table: Dict) -> float:
+        """Return a multiplier derived from "₹ in Lakhs / Crores" hints
+        found in the table headers or first two data rows.
+        Returns 100_000 for Lakhs, 10_000_000 for Crores, 1_000 for Thousands,
+        and 1.0 when no hint is found.
+        """
+        header_text = " ".join(table.get("headers", []))
+        first_rows  = " ".join(
+            " ".join(str(v) for v in row.values())
+            for row in table.get("rows", [])[:2]
+        )
+        combined = (header_text + " " + first_rows).lower()
+
+        if re.search(r"in\s+crore|(?:₹|rs\.?)\s*crore|crores?\b|(?:₹|rs\.?)\s*cr\b", combined):
+            return 10_000_000.0   # 1 Crore = 10 million
+        if re.search(r"in\s+lakh|(?:₹|rs\.?)\s*lakh|lakhs?\b|(?:₹|rs\.?)\s*l\b|rs\.\s*in\s*lakh", combined):
+            return 100_000.0       # 1 Lakh = 100,000
+        if re.search(r"in\s+thousand|000s\b|'000\b", combined):
+            return 1_000.0
+        return 1.0
+
     def _map_to_financials(self, table: Dict) -> Dict[str, Any]:
         """
         Walk each row. First column = label, subsequent = year values.
         Try to match label to a canonical metric.
         Returns {metric: {year_header: value, ...}, ...}
         """
+        scale = self._detect_table_scale(table)
         result: Dict[str, Dict[str, Optional[float]]] = {}
         headers = table.get("headers", [])
         # Year columns = all headers after the first
@@ -132,6 +174,13 @@ class TableExtractor:
             year_values: Dict[str, Optional[float]] = {}
             for yc in year_cols:
                 val = self._parse_number(row.get(yc, ""))
+                # Apply scale only when parse_amount_robust did NOT detect a unit itself
+                # (i.e., keep existing Cr/Lakh-suffixed values as-is; scale raw integers).
+                if val is not None and scale != 1.0:
+                    raw_cell = str(row.get(yc, "")).strip().lower()
+                    has_unit = re.search(r"\b(cr|crore|lakh|lac|thousand)\b", raw_cell)
+                    if not has_unit:
+                        val = val * scale
                 year_values[yc] = val
 
             if any(v is not None for v in year_values.values()):
@@ -149,9 +198,27 @@ class TableExtractor:
         return None
 
     def _parse_number(self, s: str) -> Optional[float]:
-        """Parse Indian number format: 1,23,456.78 → 123456.78"""
+        """Parse Indian number/currency format using the central normalizer.
+        Also handles bracket-negative accounting format: (1,234) → -1234.
+        """
         if not s:
             return None
+
+        # Bracket-negative: (1,23,456) or (1234.56) → negative
+        bracket_match = re.match(r"^\(\s*([\d,]+\.?\d*)\s*\)$", s.strip())
+        if bracket_match:
+            clean = bracket_match.group(1).replace(",", "")
+            try:
+                return -float(clean)
+            except ValueError:
+                pass
+
+        # Try the robust parser which handles Cr/Lakh units in the string
+        from ingestion.numeric_normalizer import parse_amount_robust
+        val = parse_amount_robust(s)
+        if val is not None:
+            return val
+        # Pure numeric fallback (table cells with no unit)
         clean = re.sub(r"[^\d.\-]", "", s.replace(",", ""))
         if clean in ("", "-", "."):
             return None

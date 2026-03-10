@@ -48,6 +48,7 @@ class ITRCrosscheck:
         }
 
     def _extract_itr_income(self, docs: List, tables: List[Dict]) -> Optional[float]:
+        # Source 1: TableExtractor financial_data
         for tbl in tables:
             if "annual_report" in tbl.get("source_file", "").lower():
                 continue
@@ -58,19 +59,35 @@ class ITRCrosscheck:
                     if vals:
                         return max(vals)
 
+        # Source 2: SegmentedDocument.all_financial_figures (ITR docs)
         for doc in docs:
             if doc.doc_type != "itr":
                 continue
-            for pattern in [
-                r"gross total income[^\n]*?([\d,]+)",
-                r"total income[^\n]*?([\d,]+)",
+            for fig in getattr(doc, "all_financial_figures", []):
+                if fig.get("canonical_label") in ("revenue", "pat") and fig.get("unit"):
+                    val = fig.get("absolute_value")
+                    if val and val > 0:
+                        logger.info(f"[ITRCrosscheck] ITR income from figures: {val:,.0f}")
+                        return val
+
+        # Source 3: Text regex fallback (unit-aware)
+        for doc in docs:
+            if doc.doc_type != "itr":
+                continue
+            _UNIT = r"(Cr\.?|Crore(?:s)?|L\.?|Lakh(?:s)?)?"
+            for pat in [
+                rf"gross total income[^\n]{{0,80}}?([\d,]+\.?\d*)\s*{_UNIT}",
+                rf"total income[^\n]{{0,80}}?([\d,]+\.?\d*)\s*{_UNIT}",
             ]:
-                m = re.search(pattern, doc.text_content, re.IGNORECASE)
+                m = re.search(pat, doc.text_content, re.IGNORECASE)
                 if m:
-                    return self._to_float(m.group(1))
+                    val = self._to_float(m.group(1), m.group(2) if m.lastindex >= 2 else "")
+                    if val:
+                        return val
         return None
 
     def _extract_ar_revenue(self, docs: List, tables: List[Dict]) -> Optional[float]:
+        # Source 1: TableExtractor financial_data
         for tbl in tables:
             fd = tbl.get("financial_data", {})
             if "revenue" in fd:
@@ -78,21 +95,47 @@ class ITRCrosscheck:
                 if vals:
                     return max(vals)
 
+        # Source 2: SegmentedDocument.all_financial_figures (annual_report docs)
         for doc in docs:
             if doc.doc_type != "annual_report":
                 continue
-            for pattern in [
-                r"revenue from operations[^\n]*?([\d,]+)",
-                r"(?:total|net) revenue[^\n]*?([\d,]+)",
+            for fig in getattr(doc, "all_financial_figures", []):
+                if fig.get("canonical_label") == "revenue" and fig.get("unit"):
+                    val = fig.get("absolute_value")
+                    if val and val > 0:
+                        logger.info(f"[ITRCrosscheck] AR revenue from figures: {val:,.0f}")
+                        return val
+
+        # Source 3: Text regex fallback (unit-aware)
+        for doc in docs:
+            if doc.doc_type != "annual_report":
+                continue
+            _UNIT = r"(Cr\.?|Crore(?:s)?|L\.?|Lakh(?:s)?)?"
+            for pat in [
+                rf"revenue from operations[^\n]{{0,80}}?([\d,]+\.?\d*)\s*{_UNIT}",
+                rf"(?:total|net) revenue[^\n]{{0,80}}?([\d,]+\.?\d*)\s*{_UNIT}",
             ]:
-                m = re.search(pattern, doc.text_content, re.IGNORECASE)
+                m = re.search(pat, doc.text_content, re.IGNORECASE)
                 if m:
-                    return self._to_float(m.group(1))
+                    val = self._to_float(m.group(1), m.group(2) if m.lastindex >= 2 else "")
+                    if val:
+                        return val
         return None
 
-    def _to_float(self, s: str) -> Optional[float]:
+    def _to_float(self, s: str, unit: str = "") -> Optional[float]:
+        """Convert amount string to float with optional Cr/Lakh unit scaling."""
         clean = re.sub(r"[^\d.]", "", str(s))
         try:
-            return float(clean) if clean else None
+            if not clean:
+                return None
+            val = float(clean)
+            u = unit.lower().strip().rstrip(".") if unit else ""
+            if u in ("cr", "crore", "crores"):
+                val *= 10_000_000
+            elif u in ("l", "lakh", "lakhs"):
+                val *= 100_000
+            elif u == "k":
+                val *= 1_000
+            return val
         except ValueError:
             return None

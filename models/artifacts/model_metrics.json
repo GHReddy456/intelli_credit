@@ -1,0 +1,11 @@
+{
+  "roc_auc": 0.9999,
+  "f1_score": 0.9931,
+  "precision": 0.9931,
+  "recall": 0.9931,
+  "accuracy": 0.995,
+  "train_size": 1600,
+  "test_size": 400,
+  "default_rate_pct": 36.0,
+  "model": "XGBoost (n_est=300, depth=5)"
+}

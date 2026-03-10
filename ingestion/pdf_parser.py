@@ -302,17 +302,29 @@ class PDFParser:
             "gst_discrepancy_flag": False,
         }
 
-        # Extract turnover figures
-        turnover_pattern = r"(?:taxable value|outward supplies|total turnover)[:\s]*(?:Rs\.?|₹|INR)?\s*([\d,]+)"
-        matches = re.findall(turnover_pattern, text, re.IGNORECASE)
-        if matches:
-            data["gstr1_turnover"] = self._parse_amount(matches[0])
+        _UNIT = r"(Cr\.?|Crore(?:s)?|L\.?|Lakh(?:s)?)?"
+        # Turnover / outward supplies
+        for pat in [
+            rf"(?:taxable value|outward supplies|total turnover|aggregate turnover)[^\n]{{0,80}}?([\d,]+\.?\d*)\s*{_UNIT}",
+            rf"(?:Rs\.?|₹|INR)\s*([\d,]+\.?\d*)\s*{_UNIT}",
+        ]:
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                val = self._parse_amount_with_unit(m.group(1), m.group(2) if m.lastindex >= 2 else "")
+                if val:
+                    data["gstr1_turnover"] = val
+                    break
 
         # ITC patterns
-        itc_pattern = r"(?:input tax credit|ITC)[:\s]*(?:Rs\.?|₹|INR)?\s*([\d,]+)"
-        itc_matches = re.findall(itc_pattern, text, re.IGNORECASE)
-        if itc_matches:
-            data["itc_claimed"] = self._parse_amount(itc_matches[0])
+        for pat in [
+            rf"(?:input tax credit|ITC)[^\n]{{0,80}}?([\d,]+\.?\d*)\s*{_UNIT}",
+        ]:
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                val = self._parse_amount_with_unit(m.group(1), m.group(2) if m.lastindex >= 2 else "")
+                if val:
+                    data["itc_claimed"] = val
+                    break
 
         return data
 
@@ -321,27 +333,40 @@ class PDFParser:
         data = {
             "opening_balance": None,
             "closing_balance": None,
-            "total_credits": 0,
-            "total_debits": 0,
+            "total_credits": None,
+            "total_debits": None,
             "large_transactions": [],
             "cash_transactions": [],
             "emi_patterns": [],
             "abb": None,  # Average Bank Balance
         }
 
-        # Extract balances
-        ob_pattern = r"(?:opening balance)[:\s]*(?:Rs\.?|₹|INR)?\s*([\d,]+\.?\d*)"
-        cb_pattern = r"(?:closing balance)[:\s]*(?:Rs\.?|₹|INR)?\s*([\d,]+\.?\d*)"
+        _UNIT = r"(Cr\.?|Crore(?:s)?|L\.?|Lakh(?:s)?)?"
 
-        ob_match = re.search(ob_pattern, text, re.IGNORECASE)
-        cb_match = re.search(cb_pattern, text, re.IGNORECASE)
+        def _search_val(patterns_list):
+            for pat in patterns_list:
+                m = re.search(pat, text, re.IGNORECASE)
+                if m:
+                    return self._parse_amount_with_unit(
+                        m.group(1), m.group(2) if m.lastindex >= 2 else ""
+                    )
+            return None
 
-        if ob_match:
-            data["opening_balance"] = self._parse_amount(ob_match.group(1))
-        if cb_match:
-            data["closing_balance"] = self._parse_amount(cb_match.group(1))
+        data["opening_balance"] = _search_val([
+            rf"(?:opening balance)[^\n]{{0,60}}?([\d,]+\.?\d*)\s*{_UNIT}",
+        ])
+        data["closing_balance"] = _search_val([
+            rf"(?:closing balance)[^\n]{{0,60}}?([\d,]+\.?\d*)\s*{_UNIT}",
+        ])
+        data["total_credits"] = _search_val([
+            rf"(?:total credits?|sum of credits?|aggregate credits?)[^\n]{{0,60}}?([\d,]+\.?\d*)\s*{_UNIT}",
+            rf"(?:credit total)[^\n]{{0,60}}?([\d,]+\.?\d*)\s*{_UNIT}",
+        ])
+        data["total_debits"] = _search_val([
+            rf"(?:total debits?|sum of debits?)[^\n]{{0,60}}?([\d,]+\.?\d*)\s*{_UNIT}",
+        ])
 
-        # Parse transaction tables
+        # Parse transaction tables for large / cash transactions
         for table in tables:
             if self._is_transaction_table(table):
                 transactions = self._parse_transactions(table)
@@ -356,30 +381,72 @@ class PDFParser:
     def _extract_annual_report_data(self, text: str, tables: List[Dict]) -> Dict:
         """Extract key financial data from annual reports."""
         data = {
-            "revenue": {},
-            "ebitda": {},
-            "pat": {},
-            "total_debt": {},
-            "net_worth": {},
+            "revenue": None,
+            "ebitda": None,
+            "pat": None,
+            "total_debt": None,
+            "equity": None,
+            "current_assets": None,
+            "current_liabilities": None,
+            "interest": None,
             "audit_qualifications": [],
             "contingent_liabilities": {},
             "related_party_transactions": [],
             "directors": [],
         }
 
-        # Revenue patterns (Indian format: "Rs. X Crores" or "₹ X Cr.")
-        rev_pattern = r"(?:revenue from operations|net revenue|total revenue)[^\n]*?(?:Rs\.?|₹|INR)?\s*([\d,]+\.?\d*)\s*(?:Cr|Crore|L|Lakh)?"
-        rev_matches = re.findall(rev_pattern, text, re.IGNORECASE)
-        if rev_matches:
-            data["revenue"]["extracted"] = [self._parse_amount(m) for m in rev_matches[:3]]
+        # Each entry: (data_key, list_of_regex_patterns)
+        # Patterns must have exactly 2 capture groups: (amount, unit?)
+        _UNIT = r"(Cr\.?|Crore(?:s)?|L\.?|Lakh(?:s)?|K)?"
+        extraction_patterns = {
+            "revenue": [
+                rf"(?:revenue from operations|net revenue|total revenue)[^\n]{{0,80}}?([\d,]+\.?\d*)\s*{_UNIT}",
+                rf"(?:turnover|sales)[^\n]{{0,60}}?([\d,]+\.?\d*)\s*{_UNIT}",
+            ],
+            "ebitda": [
+                rf"(?:ebitda|pbdit|operating profit)[^\n]{{0,80}}?([\d,]+\.?\d*)\s*{_UNIT}",
+                rf"(?:earnings before interest[^\n]{{0,20}}tax)[^\n]{{0,60}}?([\d,]+\.?\d*)\s*{_UNIT}",
+            ],
+            "pat": [
+                rf"(?:profit after tax|pat\b|net profit)[^\n]{{0,80}}?([\d,]+\.?\d*)\s*{_UNIT}",
+                rf"(?:profit for the year)[^\n]{{0,60}}?([\d,]+\.?\d*)\s*{_UNIT}",
+            ],
+            "total_debt": [
+                rf"(?:total debt|total borrowings)[^\n]{{0,80}}?([\d,]+\.?\d*)\s*{_UNIT}",
+                rf"(?:long.?term borrowings)[^\n]{{0,60}}?([\d,]+\.?\d*)\s*{_UNIT}",
+            ],
+            "equity": [
+                rf"(?:shareholders[' ]equity|net worth|total equity)[^\n]{{0,80}}?([\d,]+\.?\d*)\s*{_UNIT}",
+                rf"(?:equity share capital and reserves)[^\n]{{0,60}}?([\d,]+\.?\d*)\s*{_UNIT}",
+            ],
+            "current_assets": [
+                rf"(?:current assets|total current assets)[^\n]{{0,80}}?([\d,]+\.?\d*)\s*{_UNIT}",
+            ],
+            "current_liabilities": [
+                rf"(?:current liabilities|total current liabilities)[^\n]{{0,80}}?([\d,]+\.?\d*)\s*{_UNIT}",
+            ],
+            "interest": [
+                rf"(?:finance costs?|interest expense|borrowing costs?)[^\n]{{0,80}}?([\d,]+\.?\d*)\s*{_UNIT}",
+            ],
+        }
+
+        for key, patterns in extraction_patterns.items():
+            for pat in patterns:
+                m = re.search(pat, text, re.IGNORECASE)
+                if m:
+                    amount_str = m.group(1)
+                    unit_str = m.group(2) if m.lastindex >= 2 and m.group(2) else ""
+                    val = self._parse_amount_with_unit(amount_str, unit_str)
+                    if val is not None:
+                        data[key] = val
+                        break
 
         # Audit qualification check
         qual_keywords = ["emphasis of matter", "qualified opinion", "adverse opinion", "unable to obtain"]
         for kw in qual_keywords:
             if kw.lower() in text.lower():
-                # Extract surrounding context
                 idx = text.lower().find(kw.lower())
-                context = text[max(0, idx-100):idx+300]
+                context = text[max(0, idx - 100):idx + 300]
                 data["audit_qualifications"].append({"keyword": kw, "context": context[:200]})
 
         # Directors extraction
@@ -458,6 +525,26 @@ class PDFParser:
                 transactions.append(txn)
 
         return transactions
+
+    def _parse_amount_with_unit(self, amount_str: str, unit_str: str = "") -> Optional[float]:
+        """Parse an Indian currency amount when the unit (Cr/Lakh) is already captured."""
+        if not amount_str:
+            return None
+        try:
+            clean = re.sub(r"[^\d.]", "", str(amount_str))
+            if not clean:
+                return None
+            val = float(clean)
+            u = unit_str.lower().strip().rstrip(".")
+            if u in ("cr", "crore", "crores"):
+                val *= 10_000_000
+            elif u in ("l", "lakh", "lakhs"):
+                val *= 100_000
+            elif u == "k":
+                val *= 1_000
+            return val
+        except (ValueError, AttributeError):
+            return None
 
     def _parse_amount(self, amount_str: str) -> Optional[float]:
         """Parse Indian currency amounts."""

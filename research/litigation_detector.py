@@ -58,10 +58,15 @@ class LitigationDetector:
                 seen.add(key)
                 unique_cases.append(c)
 
-        # Score
+        # Severity-weighted score (qualitative)
         severity_weights = {"CRITICAL": 1.0, "HIGH": 0.75, "MEDIUM": 0.4, "LOW": 0.15}
         raw_score = sum(severity_weights.get(c["severity"], 0.1) for c in unique_cases)
         litigation_score = round(min(raw_score / 5.0, 1.0), 4)   # normalise
+
+        # Count-based litigation risk: Litigation_Risk = min(1, count / 20)
+        # HIGH band when count > 15 cases
+        count = len(unique_cases)
+        litigation_risk = round(min(1.0, count / 20.0), 4)
 
         high_cases = [c for c in unique_cases if c["severity"] in ("CRITICAL", "HIGH")]
 
@@ -72,13 +77,20 @@ class LitigationDetector:
                 "severity": "HIGH",
                 "detail":   f"{len(high_cases)} high/critical severity cases found",
             })
+        if count > 15:
+            flags.append({
+                "flag":     "LITIGATION_COUNT_HIGH",
+                "severity": "HIGH",
+                "detail":   f"{count} total litigation cases — high-risk band (threshold: 15)",
+            })
 
-        logger.info(f"[Litigation] Found {len(unique_cases)} cases, score={litigation_score:.3f}")
+        logger.info(f"[Litigation] Found {count} cases, score={litigation_score:.3f}, risk={litigation_risk:.3f}")
 
         return {
-            "litigation_count":          len(unique_cases),
+            "litigation_count":          count,
             "high_severity_count":       len(high_cases),
             "litigation_severity_score": litigation_score,
+            "litigation_risk":           litigation_risk,   # min(1, count/20) formula
             "cases":                     unique_cases[:20],
             "flags":                     flags,
         }

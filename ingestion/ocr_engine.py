@@ -43,13 +43,14 @@ class OCREngine:
             confidence = self._quality(full_text) * 0.85   # OCR slight penalty
             doc_type   = self._detect_type(full_text, fp.name)
             return ParsedDocument(
-                file_path=str(fp),
                 file_name=fp.name,
                 doc_type=doc_type,
                 text_content=full_text,
-                pages=pages_text,
+                tables=[],
+                metadata={},
                 page_count=len(pages_text),
                 extraction_confidence=confidence,
+                raw_pages=pages_text,
             )
         except Exception as e:
             logger.error(f"[OCREngine] Failed: {e}")
@@ -125,9 +126,10 @@ class OCREngine:
 
     def _empty(self, fp: Path) -> ParsedDocument:
         return ParsedDocument(
-            file_path=str(fp), file_name=fp.name,
+            file_name=fp.name,
             doc_type="unknown", text_content="",
-            pages=[], page_count=0, extraction_confidence=0.0,
+            tables=[], metadata={},
+            page_count=0, extraction_confidence=0.0,
         )
 
     def _check_tesseract(self) -> bool:

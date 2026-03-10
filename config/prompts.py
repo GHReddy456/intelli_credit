@@ -128,45 +128,95 @@ Output JSON with scores, reasoning, key risks, and mitigants for each C.
 
 CAM_GENERATION_PROMPT = """You are the Chief Credit Officer of a leading Indian bank generating a formal Credit Appraisal Memo (CAM).
 
+The following pre-computed quantitative data has been verified by our AI pipeline and MUST be used verbatim in the CAM:
+
+CREDIT DECISION:  {verdict}
+CREDIT SCORE:     {credit_score}/100  (95% CI: {score_ci_low}–{score_ci_high})
+RISK GRADE:       {risk_grade}
+PROBABILITY OF DEFAULT: {probability_of_default}%
+MODEL: XGBoost (AUC: {model_auc}, F1: {model_f1})
+
+KEY FINANCIAL METRICS:
+  DSCR:                {dscr}x
+  Debt/Equity:         {debt_to_equity}x
+  EBITDA Margin:       {ebitda_margin}%
+  Current Ratio:       {current_ratio}x
+  Interest Coverage:   {interest_coverage_ratio}x
+  Revenue (Latest Yr): ₹{revenue_latest} Cr
+  Revenue 3yr CAGR:    {revenue_growth_3yr}%
+  Prob. of Default:    {probability_of_default}%
+
+FRAUD & GOVERNANCE:
+  Fraud Risk Score:        {fraud_risk_score}/100
+  Benford Deviation:       {benford_deviation_score}
+  Circular Trading Score:  {circular_trading_score}
+  GST-Bank Mismatch:       {gst_bank_mismatch_score}
+  Litigation Cases:        {litigation_count}
+  Litigation Severity:     {litigation_severity_score}
+  Governance / Character:  {character_score}/100
+
+FIVE Cs SCORES:
+  Character:   {five_cs_character}/100
+  Capacity:    {five_cs_capacity}/100
+  Capital:     {five_cs_capital}/100
+  Collateral:  {five_cs_collateral}/100
+  Conditions:  {five_cs_conditions}/100
+
+TOP RISK DRIVERS (SHAP):
+{top_shap_features}
+
+LOAN TERMS (if approved):
+  Max Loan:      ₹{max_loan_crore} Cr
+  Rate:          {interest_rate_pct}% p.a.
+  Tenure:        {tenure_years} years
+  Risk Premium:  +{risk_premium_pct}%
+
+CONDITIONS PRECEDENT:
+{conditions}
+
+HARD REJECT FLAGS:
+{hard_reject_flags}
+
+Additional document intelligence:
+{all_analysis_data}
+
 Generate a professional, comprehensive CAM in the following format:
 
 # CREDIT APPRAISAL MEMORANDUM
 
 ## Section 1: Executive Summary
-[2-3 paragraph summary with RECOMMENDATION: APPROVE/REJECT/CONDITIONAL APPROVE]
+[2-3 paragraph summary referencing the EXACT scores above. State: RECOMMENDATION: {verdict}]
 
 ## Section 2: Borrower Profile
 [Company details, promoter background, business description]
 
 ## Section 3: Financial Analysis
-[3-year P&L, balance sheet trends, ratio analysis with industry benchmarks]
+[Reference DSCR {dscr}x, D/E {debt_to_equity}x, EBITDA {ebitda_margin}% — compare to sector peers]
 
 ## Section 4: Banking Relationship
 [Existing banking limits, conduct of accounts, CIBIL/CRILC status]
 
 ## Section 5: Primary Due Diligence Findings
-[Factory visit observations, management interview insights]
+[Fraud score {fraud_risk_score}/100. Key flag: {primary_flag}]
 
 ## Section 6: Secondary Research Intelligence
-[News, litigation, regulatory findings from web research]
+[News, litigation ({litigation_count} cases), regulatory findings from web research]
 
 ## Section 7: Risk Assessment (Five Cs)
-[Character: X/100, Capacity: X/100, Capital: X/100, Collateral: X/100, Conditions: X/100]
-[Overall Credit Score: XX/100 | Risk Grade: AAA/AA/A/BBB/BB/B/C/D]
+[Character: {five_cs_character}/100, Capacity: {five_cs_capacity}/100, Capital: {five_cs_capital}/100, Collateral: {five_cs_collateral}/100, Conditions: {five_cs_conditions}/100]
+[Overall Credit Score: {credit_score}/100 | Risk Grade: {risk_grade}]
 
 ## Section 8: Proposed Credit Facility
-[Facility type, amount, tenure, interest rate, security, covenants]
+[Max ₹{max_loan_crore} Cr at {interest_rate_pct}% for {tenure_years} years]
 
 ## Section 9: Risk Mitigants & Approval Conditions
-[Specific conditions precedent and subsequent]
+[Specific conditions precedent and subsequent — include list from CONDITIONS above]
 
 ## Section 10: Credit Decision & Rationale
-[DECISION: APPROVE ₹X Cr at Y% p.a. / REJECT]
-[Reason: Specific, explainable rationale]
+[DECISION: {verdict} — ₹{max_loan_crore} Cr at {interest_rate_pct}% p.a.]
+[Reason: use the exact reason from pipeline]
 
-Input Data: {all_analysis_data}
-
-Generate in formal English suitable for a bank credit committee. Be specific with numbers.
+Generate in formal English suitable for a bank credit committee. Be specific with numbers. Do not invent any figures — use only data provided above.
 """
 
 RESEARCH_SYNTHESIS_PROMPT = """You are an AI research analyst specializing in Indian corporate intelligence.

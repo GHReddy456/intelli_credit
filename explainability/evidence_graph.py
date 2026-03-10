@@ -24,6 +24,7 @@ class EvidenceGraph:
         ml_result:         Dict[str, Any],
         shap_result:       Dict[str, Any],
         decision:          str,
+        fraud_result:      Dict[str, Any] = None,
     ) -> Dict[str, Any]:
 
         G = nx.DiGraph()
@@ -71,6 +72,12 @@ class EvidenceGraph:
         shap_top_names = {d["feature"] for d in shap_result.get("top_drivers", [])}
 
         for feat_name, feat_val in features.items():
+            # Skip non-scalar features (lists, dicts) — they are display data, not graph nodes
+            if not isinstance(feat_val, (int, float)):
+                continue
+            # Skip None values — they represent missing data
+            if feat_val is None:
+                continue
             f_id = f"FEAT::{feat_name}"
             is_top = feat_name in shap_top_names
             G.add_node(f_id, label=feat_name.replace("_", " ").title(),
@@ -96,24 +103,39 @@ class EvidenceGraph:
                     G.add_edge(doc_id, f_id, rel="feeds")
 
         # ── Layer 3a: Hard reject flags ──────────────────────────────────────
-        for flag in rule_result.get("hard_reject_flags", []):
+        _all_flags = rule_result.get("risk_flags", [])
+        for flag in [f for f in _all_flags if f.get("type") == "HARD_REJECT"]:
             flag_id = f"FLAG::HR::{flag.get('rule','?')}"
             G.add_node(flag_id, label=f"HARD REJECT: {flag.get('rule','?')}",
                        node_type="hard_flag", color="#EF4444")
-            f_id = f"FEAT::{flag.get('feature','')}"
+            f_id = f"FEAT::{flag.get('rule','')}"
             if f_id in G.nodes:
                 G.add_edge(f_id, flag_id, rel="triggers")
             G.add_edge(flag_id, "DECISION", rel="determines")
 
         # ── Layer 3b: Policy flags ───────────────────────────────────────────
-        for flag in rule_result.get("policy_flags", []):
+        for flag in [f for f in _all_flags if f.get("type") == "POLICY_FLAG"]:
             flag_id = f"FLAG::POLICY::{flag.get('rule','?')}"
             G.add_node(flag_id, label=f"{flag.get('rule','?')} (-{flag.get('deduction',0)}pts)",
                        node_type="policy_flag", color="#F59E0B")
-            f_id = f"FEAT::{flag.get('feature','')}"
+            f_id = f"FEAT::{flag.get('rule','')}"
             if f_id in G.nodes:
                 G.add_edge(f_id, flag_id, rel="triggers")
             G.add_edge(flag_id, "DECISION", rel="influences")
+
+        # ── Layer 3c: Fraud evidence flags ───────────────────────────────────
+        if fraud_result:
+            for flag in (fraud_result.get("all_flags") or []):
+                flag_name = flag.get("flag") or flag.get("type") or "FRAUD_FLAG"
+                flag_id = f"FLAG::FRAUD::{flag_name}"
+                if flag_id not in G.nodes:
+                    sev = (flag.get("severity") or "MEDIUM").upper()
+                    G.add_node(flag_id,
+                               label=f"Fraud: {flag_name}",
+                               node_type="hard_flag" if sev == "HIGH" else "policy_flag",
+                               color="#EF4444" if sev == "HIGH" else "#F59E0B",
+                               description=flag.get("detail", ""))
+                    G.add_edge(flag_id, "DECISION", rel="influences")
 
         # ── Layer 4: ML node ─────────────────────────────────────────────────
         ml_id = "ML::XGBoost"
