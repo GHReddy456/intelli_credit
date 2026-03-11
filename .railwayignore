@@ -1,0 +1,18 @@
+# Exclude large / unnecessary directories from Railway upload
+uploads/
+cam_outputs/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.venv/
+frontend/node_modules/
+frontend/build/
+frontend/.vercel/
+.env
+*.pkl
+models/artifacts/
+data/
+demo_data/
+stress_test.py
+diag_output.txt
