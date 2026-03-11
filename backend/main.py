@@ -385,6 +385,13 @@ def _sync_pipeline(job_id: str):
         from research.triangulation_engine import TriangulationEngine
         from research.precognitive_risk import PreCognitiveRiskEngine
 
+        doc_summaries = [
+            {"file_name": p.file_name, "doc_type": p.doc_type,
+             "page_count": p.page_count, "confidence": p.extraction_confidence,
+             "metadata": p.metadata}
+            for p in parsed_docs
+        ]
+
         triangulation = TriangulationEngine().triangulate(
             research=research_report,
             features=features,
@@ -422,12 +429,6 @@ def _sync_pipeline(job_id: str):
         decision = decision_engine.decide(rule_result, ml_result, features, shap_out)
 
         # Build evidence graph now that all inputs are ready
-        doc_summaries = [
-            {"file_name": p.file_name, "doc_type": p.doc_type,
-             "page_count": p.page_count, "confidence": p.extraction_confidence,
-             "metadata": p.metadata}
-            for p in parsed_docs
-        ]
         seg_summaries = [
             {
                 "file_name": s.source_file,
