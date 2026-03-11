@@ -8,7 +8,7 @@ from typing import Dict, Any, List
 from loguru import logger
 from backend.config import (
     APPROVE_THRESHOLD, CONDITIONAL_THRESHOLD,
-    BASE_INTEREST_RATE, LOAN_TO_TURNOVER_RATIO,
+    BASE_INTEREST_RATE,
 )
 from backend.llm import llm_call, gemini_available as ollama_available
 
@@ -93,10 +93,23 @@ class DecisionEngine:
 
         credit_score = ml_result.get("credit_score", 0)
 
-        # Blend ML score with policy score (80/20)
-        blended = round(0.80 * credit_score + 0.20 * rule_result.get("policy_score", 50), 1)
-        # Grade and PD are derived from the blended score (not raw ML score)
-        risk_grade   = self._score_to_grade(blended)
+        # Compute the weighted scorecard total so weak dimensions pull score down
+        ws = self._weighted_scorecard(features)
+        scorecard_total = ws["weighted_total"]
+
+        # Blend: 50% ML · 20% policy · 30% financial scorecard
+        # Prevents ML alone from dominating when Capital / Capacity are weak
+        blended = round(
+            0.50 * credit_score
+            + 0.20 * rule_result.get("policy_score", 50)
+            + 0.30 * scorecard_total,
+            1,
+        )
+
+        # Derive grade then apply Five Cs downgrade caps for structural realism
+        risk_grade = self._score_to_grade(blended)
+        five_cs    = self._five_cs(features)
+        risk_grade = self._apply_grade_caps(risk_grade, five_cs)
 
         # ── 2. Verdict ───────────────────────────────────────────────────────
         if blended >= APPROVE_THRESHOLD:
@@ -141,7 +154,47 @@ class DecisionEngine:
             policy_flags=_policy_flags,
             loan_details=loan_details,
             ml_result=ml_result,
+            weighted_scorecard=ws,
+            five_cs=five_cs,
         )
+
+    # Grade → max single-borrower exposure as % of revenue (RBI prudential norms)
+    _GRADE_EXPOSURE_PCT = {
+        "AAA": 0.07, "AA":  0.06, "A":   0.05,
+        "BBB": 0.04, "BB":  0.03, "B":   0.02,
+        "C":   0.01, "D":   0.00,
+    }
+
+    _GRADE_ORDER = ["AAA", "AA", "A", "BBB", "BB", "B", "C", "D"]
+
+    def _downgrade_by(self, grade: str, steps: int) -> str:
+        idx = self._GRADE_ORDER.index(grade) if grade in self._GRADE_ORDER else 0
+        return self._GRADE_ORDER[min(idx + steps, len(self._GRADE_ORDER) - 1)]
+
+    def _apply_grade_caps(self, grade: str, five_cs: Dict) -> str:
+        """Enforce downgrade conditions based on weak Five Cs scores."""
+        capital  = five_cs.get("capital",  100)
+        capacity = five_cs.get("capacity", 100)
+
+        # Capital < 50 → cannot exceed BBB (weak equity / high leverage)
+        if capital < 50:
+            cap_grade = "BBB"
+            if self._GRADE_ORDER.index(grade) < self._GRADE_ORDER.index(cap_grade):
+                grade = cap_grade
+        # Capital < 65 → cannot exceed AA
+        elif capital < 65:
+            cap_grade = "AA"
+            if self._GRADE_ORDER.index(grade) < self._GRADE_ORDER.index(cap_grade):
+                grade = cap_grade
+
+        # Capacity (debt service ability) < 60 → downgrade one notch
+        if capacity < 60:
+            grade = self._downgrade_by(grade, 1)
+        # Capacity < 50 → downgrade two notches (serious repayment risk)
+        elif capacity < 50:
+            grade = self._downgrade_by(grade, 2)
+
+        return grade
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -169,28 +222,44 @@ class DecisionEngine:
         return conds
 
     def _compute_loan(self, features: Dict, risk_grade: str) -> Dict:
-        revenue = features.get("revenue_growth_3yr", 0)  # Not turnover — use fallback
-        # Try to infer turnover from features; we store a proxy as annual_revenue_crore
-        # Features doesn't directly expose revenue; use collateral as a proxy if needed
-        # Placeholder: ₹10 Cr default; main.py should patch this from actual financials
-        estimated_turnover_cr = features.get("_turnover_crore", 10.0)
-        max_loan_cr = estimated_turnover_cr * LOAN_TO_TURNOVER_RATIO
+        turnover_cr   = features.get("_turnover_crore", 10.0) or 10.0
+        ebitda_margin = features.get("ebitda_margin", 0.12) or 0.12
+        dscr          = max(features.get("dscr", 1.2), 0.5)
+        icr           = max(features.get("interest_coverage_ratio", 1.5), 0.5)
 
-        premium = self.RATE_PREMIUM.get(risk_grade, 3.50)
+        # Method 1: Grade-based % of revenue (RBI single-borrower prudential norms)
+        exposure_pct  = self._GRADE_EXPOSURE_PCT.get(risk_grade, 0.02)
+        loan_by_rev   = turnover_cr * exposure_pct
+
+        # Method 2: EBITDA-service capacity (EBITDA × DSCR x tenure at interest rate)
+        # Maximum debt the company can service = EBITDA / (interest + principal amortisation)
+        # Simplified: sustainable debt ≈ EBITDA × min(DSCR, 2.5) × 3.5 (market convention)
+        ebitda_cr     = turnover_cr * ebitda_margin
+        loan_by_ebitda = ebitda_cr * min(dscr, 2.5) * 3.5
+
+        # Take the more conservative of the two
+        max_loan_cr   = round(min(loan_by_rev, loan_by_ebitda), 2)
+        # Floor at ₹1 Cr for any viable business
+        max_loan_cr   = max(max_loan_cr, 1.0)
+
+        premium       = self.RATE_PREMIUM.get(risk_grade, 3.50)
         interest_rate = BASE_INTEREST_RATE + premium
 
         return {
-            "max_loan_crore":     round(max_loan_cr, 2),
+            "max_loan_crore":     max_loan_cr,
             "interest_rate_pct":  round(interest_rate, 2),
             "risk_premium_pct":   round(premium, 2),
             "base_rate_pct":      BASE_INTEREST_RATE,
             "tenure_years":       5,
-            "note":               "Loan limit = 40% of estimated annual turnover; rate = base + risk premium",
+            "loan_by_revenue_cr": round(loan_by_rev, 2),
+            "loan_by_ebitda_cr":  round(loan_by_ebitda, 2),
+            "note":               f"Conservative of: {exposure_pct*100:.0f}% of revenue (₹{loan_by_rev:.0f} Cr) vs EBITDA-service capacity (₹{loan_by_ebitda:.0f} Cr)",
         }
 
     def _build_decision(self, verdict, reason, credit_score, risk_grade, features,
                         policy_score, conditions, hard_reject_flags, policy_flags,
-                        loan_details=None, ml_result=None) -> Dict[str, Any]:
+                        loan_details=None, ml_result=None,
+                        weighted_scorecard=None, five_cs=None) -> Dict[str, Any]:
         logger.info(f"[Decision] {verdict} — score={credit_score}, grade={risk_grade}")
         # Logistic PD: z = 0.5 - 0.055 × score
         # Score <20 → PD≈42%, 40 → PD≈20%, 60 → PD≈8%, 80 → PD≈3%
@@ -228,8 +297,8 @@ class DecisionEngine:
             "policy_flags":        policy_flags,
             "loan_details":        loan_details or {},
             "rule_path":           rule_path,
-            "five_cs_scores":      self._five_cs(features),
-            "weighted_scorecard":  self._weighted_scorecard(features),
+            "five_cs_scores":      five_cs or self._five_cs(features),
+            "weighted_scorecard":  weighted_scorecard or self._weighted_scorecard(features),
         }
 
     def _weighted_scorecard(self, features: Dict) -> Dict[str, Any]:
