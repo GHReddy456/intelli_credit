@@ -3,16 +3,17 @@ CAM Generator -- assembles the full Credit Appraisal Memo content dict.
 
 Section order (mirrors Indian bank CAM format):
   1. Executive Summary
-  2. Borrower Profile
-  3. Facility Structure
-  4. Five Cs Analysis
-  5. Financial Ratios
-  6. Fraud & Integrity Assessment
-  7. Promoter & Governance
-  8. Sector Outlook
-  9. AI Risk Attribution (SHAP)
-  10. Evidence Traceability
-  11. Sanction Recommendation
+  2. SWOT Analysis
+  3. Borrower Profile
+  4. Facility Structure
+  5. Five Cs Analysis
+  6. Financial Ratios
+  7. Fraud & Integrity Assessment
+  8. Promoter & Governance
+  9. Sector Outlook
+  10. AI Risk Attribution (SHAP)
+  11. Evidence Traceability
+  12. Sanction Recommendation
 
 The content dict is then rendered to PDF by cam/pdf_exporter.py.
 """
@@ -82,6 +83,7 @@ class CAMGenerator:
         sector:        Dict[str, Any],
         research:      Dict[str, Any],
         doc_summaries: List[Dict],
+        entity:        Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         logger.info(f"[CAM] Generating appraisal memo for {company_name}")
 
@@ -184,6 +186,10 @@ class CAMGenerator:
             },
             "risk_radar": self._risk_radar(decision, features),
         }
+        # Attach structured SWOT (built inside _exec_summary)
+        cam["swot"] = getattr(self, "_last_swot", {
+            "strengths": [], "weaknesses": [], "opportunities": [], "threats": [],
+        })
         return cam
 
     # =========================================================================
@@ -277,6 +283,45 @@ class CAMGenerator:
         strength_bullets = "\n".join(f"  * {s}" for s in strengths) or "  * (none identified)"
         risk_bullets     = "\n".join(f"  * {r}" for r in risks)     or "  * (none identified)"
 
+        # ── Opportunities & Threats (complete SWOT) ──────────────────────────
+        opportunities, threats = [], []
+        sector_data = decision.get("sector", {}) or {}
+        sector_risk = features.get("sector_risk_score", 50)
+        news_sent = features.get("news_sentiment_score", 0.5)
+
+        if sector_risk < 40:
+            opportunities.append("Favourable sector outlook with below-average industry risk")
+        if news_sent > 0.6:
+            opportunities.append(f"Positive media sentiment (score: {news_sent:.2f})")
+        if ebitda_m >= 0.15:
+            opportunities.append("Strong margins provide room for business expansion")
+        if dscr >= 1.75:
+            opportunities.append("Robust cash flows enable capacity growth / capex investment")
+        rev_growth = features.get("_display_ratios", {}).get("revenue_growth_3yr")
+        if rev_growth and rev_growth > 0.10:
+            opportunities.append(f"Consistent revenue growth trajectory ({rev_growth*100:.1f}% 3-yr CAGR)")
+        if not opportunities:
+            opportunities.append("Stable operating environment supports existing capacity utilisation")
+
+        if sector_risk > 65:
+            threats.append("Elevated sector headwinds may impact future performance")
+        if news_sent < 0.35:
+            threats.append(f"Adverse media sentiment (score: {news_sent:.2f}) warrants monitoring")
+        if fraud_flags_exist:
+            threats.append("Fraud-risk indicators detected — enhanced monitoring required")
+        if lit_count > 2:
+            threats.append(f"Multiple active litigations ({lit_count}) pose legal/financial risk")
+        reg_violations = int(features.get("regulatory_violation_count", 0))
+        if reg_violations > 0:
+            threats.append(f"Regulatory violation(s) noted ({reg_violations}) — compliance risk")
+        if de > 2.0:
+            threats.append(f"High leverage (D/E: {de:.2f}x) limits financial flexibility")
+        if not threats:
+            threats.append("No material external threats identified at the time of assessment")
+
+        opportunity_bullets = "\n".join(f"  * {o}" for o in opportunities)
+        threat_bullets      = "\n".join(f"  * {t}" for t in threats)
+
         lines = [
             f"{company} -- CREDIT APPRAISAL SUMMARY",
             "",
@@ -287,11 +332,19 @@ class CAMGenerator:
             loan_line,
             f"{no_reject}Five Cs: Character {char_sc:.0f}  Capacity {cap_sc:.0f}  Capital {capt_sc:.0f}  Collateral {coll_sc:.0f}  Conditions {cond_sc:.0f} (out of 100)",
             "",
-            "Key Strengths:",
+            "── SWOT ANALYSIS ──",
+            "",
+            "Strengths:",
             strength_bullets,
             "",
-            "Key Risk Factors:",
+            "Weaknesses / Risk Factors:",
             risk_bullets,
+            "",
+            "Opportunities:",
+            opportunity_bullets,
+            "",
+            "Threats:",
+            threat_bullets,
         ]
         if conds:
             lines += ["", "Conditions Precedent / Subsequent:"]
@@ -302,6 +355,14 @@ class CAMGenerator:
             for hf in hard_flags[:5]:
                 msg = hf.get("message", str(hf)) if isinstance(hf, dict) else str(hf)
                 lines.append(f"  * {msg}")
+
+        # Store structured SWOT for frontend consumption
+        self._last_swot = {
+            "strengths": strengths,
+            "weaknesses": risks,
+            "opportunities": opportunities,
+            "threats": threats,
+        }
 
         return "\n".join(lines).strip()
 

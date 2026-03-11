@@ -11,6 +11,8 @@ import AgentReports  from "./components/AgentReports";
 import EvidenceViewer from "./components/EvidenceViewer";
 import CAMViewer     from "./components/CAMViewer";
 import LLMSelector  from "./components/LLMSelector";
+import ClassificationReview from "./components/ClassificationReview";
+import SchemaEditor from "./components/SchemaEditor";
 
 /* ── Load Material Symbols font (same as Home/Upload pages) ─────── */
 function useMaterialFont() {
@@ -41,6 +43,7 @@ const TABS = [
   { id: "Agent Reports",    icon: "◈", label: "Agent Reports" },
   { id: "Evidence",         icon: "◈", label: "Evidence" },
   { id: "CAM",              icon: "◈", label: "CAM PDF" },
+  { id: "Schema",           icon: "⚙", label: "Schema Editor" },
 ];
 
 const PIPELINE_STEPS = [
@@ -77,20 +80,27 @@ const PARTICLES = [
 ];
 
 const DOC_SLOTS = [
-  { key:"annual_report",  label:"Annual Report",  icon:"📊", desc:"FY 2022–24 · PDF",         accept:".pdf",         color:"#0891b2", bg:"#dbeafe" },
-  { key:"gstr3b",         label:"GSTR-3B",        icon:"🧾", desc:"Last 12 months returns",   accept:".pdf,.xlsx",   color:"#0891b2", bg:"#dbeafe" },
-  { key:"bank_statement", label:"Bank Statement", icon:"🏦", desc:"6–12 months PDF",         accept:".pdf,.xlsx",   color:"#059669", bg:"#dcfce7" },
-  { key:"itr6",           label:"ITR-6",          icon:"📋", desc:"Last 3 assessment years",  accept:".pdf,.xml",    color:"#D97706", bg:"#fef3c7" },
-  { key:"legal_docs",     label:"Legal Docs",     icon:"⚖️",  desc:"MOA · AOA · Charges",      accept:".pdf,.doc,.docx",color:"#7C3AED", bg:"#ede9fe" },
+  { key:"annual_report",        label:"Annual Report",        icon:"📊", desc:"FY 2022–24 · PDF",         accept:".pdf",            color:"#a855f7", bg:"#f3e8ff" },
+  { key:"alm",                  label:"ALM Statement",        icon:"🏦", desc:"Asset-Liability Maturity", accept:".pdf,.xlsx",      color:"#0891b2", bg:"#dbeafe" },
+  { key:"shareholding_pattern", label:"Shareholding Pattern", icon:"📈", desc:"Promoter / Public / FII",  accept:".pdf,.xlsx",      color:"#059669", bg:"#dcfce7" },
+  { key:"borrowing_profile",    label:"Borrowing Profile",    icon:"📋", desc:"Debt structure & covenants",accept:".pdf,.xlsx",     color:"#D97706", bg:"#fef3c7" },
+  { key:"portfolio_performance",label:"Portfolio Performance",icon:"📉", desc:"Portfolio cuts & returns", accept:".pdf,.xlsx",      color:"#7C3AED", bg:"#ede9fe" },
+  { key:"gstr3b",               label:"GSTR-3B",              icon:"🧾", desc:"Last 12 months returns",   accept:".pdf,.xlsx",      color:"#60a5fa", bg:"#dbeafe" },
+  { key:"bank_statement",       label:"Bank Statement",       icon:"💰", desc:"6–12 months PDF",         accept:".pdf,.xlsx",      color:"#4ade80", bg:"#dcfce7" },
+  { key:"itr6",                 label:"ITR-6",                icon:"📝", desc:"Last 3 assessment years",  accept:".pdf,.xml",       color:"#fb923c", bg:"#fef3c7" },
+  { key:"legal_docs",           label:"Legal Docs",           icon:"⚖️",  desc:"MOA · AOA · Charges",      accept:".pdf,.doc,.docx", color:"#f87171", bg:"#ede9fe" },
 ];
 
 export default function App() {
   useMaterialFont();
   const emptySlots = () => Object.fromEntries(DOC_SLOTS.map(s => [s.key, []]));
-  const [page,        setPage]        = useState("home");  // "home" | "upload" | "app"
+  const [page,        setPage]        = useState("home");  // "home" | "upload" | "classify" | "app"
   const [theme,       setTheme]       = useState("dark");  // "dark" | "light"
   const [docFiles,    setDocFiles]    = useState(emptySlots());
   const [companyName, setCompanyName] = useState("");
+  const [entityDetails, setEntityDetails] = useState({});
+  const [loanDetails,   setLoanDetails]   = useState({});
+  const [classifications, setClassifications] = useState([]);
 
   /* ── Sync theme → body class ──────────────────────────── */
   useEffect(() => {
@@ -137,18 +147,36 @@ export default function App() {
   const handleUpload = async () => {
     const allFiles = Object.values(docFiles).flat();
     if (!allFiles.length) return;
-    setPage("app");
     setStatus("uploading"); setProgress(0);
     const fd = new FormData();
     allFiles.forEach(f => fd.append("files", f));
     fd.append("company_name", companyName.trim() || "Demo Company");
+    fd.append("due_diligence_notes", entityDetails.ddNotes || "");
+    fd.append("cin", entityDetails.cin || "");
+    fd.append("pan", entityDetails.pan || "");
+    fd.append("sector", entityDetails.sector || "");
+    fd.append("turnover", entityDetails.turnover || "");
+    fd.append("loan_type", loanDetails.loanType || "");
+    fd.append("loan_amount_cr", loanDetails.amountCr || "");
+    fd.append("loan_tenure_years", loanDetails.tenureYears || "");
+    fd.append("loan_interest_rate", loanDetails.interestRate || "");
     try {
       const res = await API.post("/upload", fd);
       setJobId(res.data.job_id);
-      setStatus("running");
-      startTimer();
-      pollStatus(res.data.job_id);
-    } catch (e) { setErrorMsg(e?.message || "Upload failed"); setStatus("error"); }
+      setClassifications(res.data.classifications || []);
+      setStatus("idle");
+      setPage("classify");
+    } catch (e) { setErrorMsg(e?.message || "Upload failed"); setStatus("error"); setPage("app"); }
+  };
+
+  const handleApproveClassification = async (approved) => {
+    setPage("app");
+    setStatus("running");
+    startTimer();
+    try {
+      await API.post(`/pipeline/${jobId}/start`, { classifications: approved });
+      pollStatus(jobId);
+    } catch (e) { setErrorMsg(e?.message || "Pipeline start failed"); setStatus("error"); }
   };
 
   const pollStatus = (jid) => {
@@ -191,6 +219,22 @@ export default function App() {
         setDragOver={setDragOver}
         theme={theme}
         setTheme={setTheme}
+        entityDetails={entityDetails}
+        setEntityDetails={setEntityDetails}
+        loanDetails={loanDetails}
+        setLoanDetails={setLoanDetails}
+      />
+    );
+  }
+
+  if (page === "classify") {
+    return (
+      <ClassificationReview
+        classifications={classifications}
+        onApprove={handleApproveClassification}
+        onBack={() => setPage("upload")}
+        theme={theme}
+        companyName={companyName}
       />
     );
   }
@@ -608,6 +652,7 @@ export default function App() {
             {activeTab==="Agent Reports"    && <AgentReports  analysis={analysis} theme={theme} />}
             {activeTab==="Evidence"         && <EvidenceViewer analysis={analysis} theme={theme} />}
             {activeTab==="CAM"              && <CAMViewer     jobId={jobId} theme={theme} />}
+            {activeTab==="Schema"           && <SchemaEditor  theme={theme} />}
           </div>
         </div>
       )}
@@ -630,7 +675,7 @@ export default function App() {
               </p>
             </div>
           )}
-          <button onClick={()=>{setStatus("idle");setDocFiles(emptySlots());setProgress(0);setErrorMsg("");setPage("upload");}} style={{
+          <button onClick={()=>{setStatus("idle");setDocFiles(emptySlots());setProgress(0);setErrorMsg("");setClassifications([]);setPage("upload");}} style={{
             padding:"10px 24px",borderRadius:10,fontSize:13,fontWeight:600,
             color:"white",background:"rgba(239,68,68,.2)",border:"1px solid rgba(239,68,68,.4)",cursor:"pointer",
           }}>↩ Try Again</button>

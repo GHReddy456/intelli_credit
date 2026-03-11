@@ -83,6 +83,34 @@ SECTION_SCHEMAS: Dict[str, List[Dict]] = {
         {"label": "covenants_conditions",     "keywords": ["covenant", "condition", "terms and conditions", "condition precedent", "condition subsequent", "undertaking"]},
         {"label": "disbursement",             "keywords": ["disbursement", "drawdown", "utilisation", "end use", "disbursed amount"]},
     ],
+    "alm": [
+        {"label": "maturity_profile",         "keywords": ["maturity profile", "maturity bucket", "maturity pattern", "maturity ladder", "time bucket"]},
+        {"label": "asset_classification",     "keywords": ["asset classification", "standard assets", "sub-standard", "doubtful assets", "loss assets", "npa classification"]},
+        {"label": "liability_structure",      "keywords": ["liability structure", "deposit structure", "borrowing structure", "term deposits", "demand deposits"]},
+        {"label": "gap_analysis",             "keywords": ["gap analysis", "structural liquidity", "liquidity gap", "cumulative gap", "mismatch", "residual maturity"]},
+        {"label": "interest_rate_sensitivity","keywords": ["interest rate sensitivity", "rate sensitive", "repricing gap", "duration gap", "basis risk"]},
+    ],
+    "shareholding_pattern": [
+        {"label": "promoter_holding",         "keywords": ["promoter holding", "promoter group", "promoter and promoter group", "indian promoter", "foreign promoter"]},
+        {"label": "institutional_holding",    "keywords": ["institutional", "mutual fund", "fii", "dii", "insurance", "pension fund", "alternate investment"]},
+        {"label": "public_holding",           "keywords": ["public holding", "non-institution", "individual shareholders", "huf", "nri", "clearing member"]},
+        {"label": "pledge_details",           "keywords": ["pledge", "encumbered", "pledged shares", "shares pledged", "encumbrance"]},
+        {"label": "change_in_holding",        "keywords": ["change in shareholding", "increase", "decrease", "reason for change", "acquisition", "allotment"]},
+    ],
+    "borrowing_profile": [
+        {"label": "fund_based",               "keywords": ["fund based", "cash credit", "overdraft", "working capital demand loan", "term loan", "packing credit"]},
+        {"label": "non_fund_based",           "keywords": ["non fund based", "non-fund based", "letter of credit", "bank guarantee", "bill discounting", "lc", "bg"]},
+        {"label": "repayment_schedule",       "keywords": ["repayment schedule", "repayment", "installment", "due date", "moratorium", "principal outstanding"]},
+        {"label": "covenant_compliance",      "keywords": ["covenant", "compliance", "financial covenant", "dscr covenant", "current ratio covenant", "promoter contribution"]},
+        {"label": "outstanding_summary",      "keywords": ["outstanding", "total borrowing", "debt outstanding", "sanctioned limit", "utilisation", "drawing power"]},
+    ],
+    "portfolio_performance": [
+        {"label": "portfolio_summary",        "keywords": ["portfolio summary", "book size", "loan book", "aum", "assets under management", "total portfolio"]},
+        {"label": "performance_metrics",      "keywords": ["performance", "yield", "return on portfolio", "spread", "nim", "net interest margin", "roe", "roa"]},
+        {"label": "sector_allocation",        "keywords": ["sector allocation", "sector-wise", "industry-wise", "segment-wise", "product-wise", "geographic"]},
+        {"label": "risk_metrics",             "keywords": ["risk metric", "var", "value at risk", "expected shortfall", "stress test", "concentration risk"]},
+        {"label": "npa_analysis",             "keywords": ["npa analysis", "gross npa", "net npa", "provision coverage", "slippage", "recovery", "write-off"]},
+    ],
 }
 
 

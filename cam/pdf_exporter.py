@@ -1,9 +1,9 @@
 ﻿"""
 PDF Exporter -- renders the CAM dict to a professional PDF using ReportLab.
-Section order: Executive Summary -> Borrower Profile -> Facility Structure ->
-  Five Cs -> Financial Ratios -> Fraud & Integrity -> Promoter & Governance ->
-  Sector Outlook -> AI Risk Attribution (SHAP) -> Evidence Traceability ->
-  Sanction Recommendation.
+Section order: Executive Summary -> SWOT Analysis -> Borrower Profile ->
+  Facility Structure -> Five Cs -> Financial Ratios -> Fraud & Integrity ->
+  Promoter & Governance -> Sector Outlook -> AI Risk Attribution (SHAP) ->
+  Evidence Traceability -> Sanction Recommendation.
 """
 from __future__ import annotations
 import io, os
@@ -184,9 +184,66 @@ class PDFExporter:
         story.append(PageBreak())
 
         # ═══════════════════════════════════════════════════════════════════════
-        # Section 2 -- Borrower Profile
+        # Section 2 -- SWOT Analysis
         # ═══════════════════════════════════════════════════════════════════════
-        story.append(Paragraph("2. Borrower Profile", h1_style))
+        story.append(Paragraph("2. SWOT Analysis", h1_style))
+        swot = cam.get("swot", {})
+        s_bullets = swot.get("strengths", []) or ["(none identified)"]
+        w_bullets = swot.get("weaknesses", []) or ["(none identified)"]
+        o_bullets = swot.get("opportunities", []) or ["(none identified)"]
+        t_bullets = swot.get("threats", []) or ["(none identified)"]
+
+        _swot_hdr = ParagraphStyle("swot_hdr", fontSize=10, textColor=WHITE,
+                                    fontName="Helvetica-Bold", spaceBefore=0, spaceAfter=2)
+        _swot_body = ParagraphStyle("swot_body", fontSize=8, fontName="Helvetica",
+                                     leading=11, spaceBefore=0, spaceAfter=0)
+        _swot_bullet = lambda items: Paragraph("<br/>".join(f"\u2022 {i}" for i in items), _swot_body)
+
+        SWOT_GREEN  = colors.HexColor("#dcfce7")
+        SWOT_RED    = colors.HexColor("#fef2f2")
+        SWOT_BLUE   = colors.HexColor("#dbeafe")
+        SWOT_AMBER  = colors.HexColor("#fef9c3")
+        SWOT_GRN_BD = colors.HexColor("#059669")
+        SWOT_RED_BD = colors.HexColor("#DC2626")
+        SWOT_BLU_BD = colors.HexColor("#2563EB")
+        SWOT_AMB_BD = colors.HexColor("#D97706")
+
+        swot_data = [
+            [Paragraph("<b>STRENGTHS</b>", _swot_hdr),
+             Paragraph("<b>WEAKNESSES</b>", _swot_hdr)],
+            [_swot_bullet(s_bullets), _swot_bullet(w_bullets)],
+            [Paragraph("<b>OPPORTUNITIES</b>", _swot_hdr),
+             Paragraph("<b>THREATS</b>", _swot_hdr)],
+            [_swot_bullet(o_bullets), _swot_bullet(t_bullets)],
+        ]
+        swot_tbl = Table(swot_data, colWidths=[8.75*cm, 8.75*cm])
+        swot_tbl.setStyle(TableStyle([
+            # Header cells
+            ("BACKGROUND", (0,0), (0,0), SWOT_GRN_BD),
+            ("BACKGROUND", (1,0), (1,0), SWOT_RED_BD),
+            ("BACKGROUND", (0,2), (0,2), SWOT_BLU_BD),
+            ("BACKGROUND", (1,2), (1,2), SWOT_AMB_BD),
+            ("TEXTCOLOR",  (0,0), (-1,0), WHITE),
+            ("TEXTCOLOR",  (0,2), (-1,2), WHITE),
+            # Body cells
+            ("BACKGROUND", (0,1), (0,1), SWOT_GREEN),
+            ("BACKGROUND", (1,1), (1,1), SWOT_RED),
+            ("BACKGROUND", (0,3), (0,3), SWOT_BLUE),
+            ("BACKGROUND", (1,3), (1,3), SWOT_AMBER),
+            # Grid & padding
+            ("GRID",       (0,0), (-1,-1), 0.5, colors.white),
+            ("PADDING",    (0,0), (-1,-1), 8),
+            ("VALIGN",     (0,0), (-1,-1), "TOP"),
+        ]))
+        story.append(swot_tbl)
+        story.append(Spacer(1, 0.4*cm))
+
+        story.append(PageBreak())
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # Section 3 -- Borrower Profile
+        # ═══════════════════════════════════════════════════════════════════════
+        story.append(Paragraph("3. Borrower Profile", h1_style))
         bp = cam.get("borrower_profile", {})
         bp_rows = [
             ["Company Name",         _sc(bp.get("company_name")),    "Sector",     _sc(bp.get("sector"))],
@@ -208,9 +265,9 @@ class PDFExporter:
         story.append(bpt); story.append(Spacer(1, 0.4*cm))
 
         # ═══════════════════════════════════════════════════════════════════════
-        # Section 3 -- Facility Structure
+        # Section 4 -- Facility Structure
         # ═══════════════════════════════════════════════════════════════════════
-        story.append(Paragraph("3. Proposed Facility Structure", h1_style))
+        story.append(Paragraph("4. Proposed Facility Structure", h1_style))
         fs = cam.get("facility_structure", {})
         sec = fs.get("security", {})
         fs_rows = [
@@ -239,9 +296,9 @@ class PDFExporter:
         story.append(PageBreak())
 
         # ═══════════════════════════════════════════════════════════════════════
-        # Section 4 -- Five Cs Analysis
+        # Section 5 -- Five Cs Analysis
         # ═══════════════════════════════════════════════════════════════════════
-        story.append(Paragraph("4. Five Cs Analysis", h1_style))
+        story.append(Paragraph("5. Five Cs Analysis", h1_style))
         five_cs_rows = [["Dimension", "Score", "Band", "Key Metrics"]]
         for key, label in [("character","Character"), ("capacity","Capacity"),
                             ("capital","Capital"), ("collateral","Collateral"),
@@ -290,9 +347,9 @@ class PDFExporter:
         story.append(PageBreak())
 
         # ═══════════════════════════════════════════════════════════════════════
-        # Section 5 -- Financial Ratios
+        # Section 6 -- Financial Ratios
         # ═══════════════════════════════════════════════════════════════════════
-        story.append(Paragraph("5. Key Financial Ratios", h1_style))
+        story.append(Paragraph("6. Key Financial Ratios", h1_style))
         ratio_rows = [["Financial Metric", "Value", "Source Document", "Higher is Better"]]
         for r in cam["financial_ratios"]:
             ratio_rows.append([
@@ -319,9 +376,9 @@ class PDFExporter:
         story.append(Spacer(1, 0.4*cm))
 
         # ═══════════════════════════════════════════════════════════════════════
-        # Section 6 -- Fraud & Integrity Assessment
+        # Section 7 -- Fraud & Integrity Assessment
         # ═══════════════════════════════════════════════════════════════════════
-        story.append(Paragraph("6. Fraud & Integrity Assessment", h1_style))
+        story.append(Paragraph("7. Fraud & Integrity Assessment", h1_style))
         fi = cam.get("fraud_integrity", {})
         overall_band = fi.get("overall_risk_band", "N/A")
         band_color = {"LOW": GREEN, "MEDIUM": AMBER, "HIGH": RED}.get(overall_band, NAVY)
@@ -386,9 +443,9 @@ class PDFExporter:
         story.append(PageBreak())
 
         # ═══════════════════════════════════════════════════════════════════════
-        # Section 7 -- Promoter & Governance
+        # Section 8 -- Promoter & Governance
         # ═══════════════════════════════════════════════════════════════════════
-        story.append(Paragraph("7. Promoter & Governance Profile", h1_style))
+        story.append(Paragraph("8. Promoter & Governance Profile", h1_style))
         pg = cam.get("promoter_governance", {})
         pg_rows = [
             ["Promoter Network Risk Score", f"{float(pg.get('risk_score') or 0):.3f}  (0-1, lower is better)"],
@@ -418,9 +475,9 @@ class PDFExporter:
         story.append(Spacer(1, 0.4*cm))
 
         # ═══════════════════════════════════════════════════════════════════════
-        # Section 8 -- Sector Outlook
+        # Section 9 -- Sector Outlook
         # ═══════════════════════════════════════════════════════════════════════
-        story.append(Paragraph("8. Sector & Macroeconomic Outlook", h1_style))
+        story.append(Paragraph("9. Sector & Macroeconomic Outlook", h1_style))
         so = cam.get("sector_outlook", {})
         story.append(Paragraph(
             f"Sector: <b>{so.get('sector_name','N/A')}</b>  |  "
@@ -464,9 +521,9 @@ class PDFExporter:
         story.append(PageBreak())
 
         # ═══════════════════════════════════════════════════════════════════════
-        # Section 9 -- AI Risk Attribution (SHAP)
+        # Section 10 -- AI Risk Attribution (SHAP)
         # ═══════════════════════════════════════════════════════════════════════
-        story.append(Paragraph("9. AI Risk Attribution (SHAP Analysis)", h1_style))
+        story.append(Paragraph("10. AI Risk Attribution (SHAP Analysis)", h1_style))
         ai_attr = cam.get("ai_risk_attribution", {})
         story.append(Paragraph(
             f"Method: {ai_attr.get('method','N/A')}  |  "
@@ -489,9 +546,9 @@ class PDFExporter:
         story.append(Spacer(1, 0.4*cm))
 
         # ═══════════════════════════════════════════════════════════════════════
-        # Section 10 -- Evidence Traceability
+        # Section 11 -- Evidence Traceability
         # ═══════════════════════════════════════════════════════════════════════
-        story.append(Paragraph("10. Evidence Traceability", h1_style))
+        story.append(Paragraph("11. Evidence Traceability", h1_style))
         story.append(Paragraph(
             "Each financial metric below is linked to its source document and section.",
             small_style,
@@ -538,9 +595,9 @@ class PDFExporter:
         story.append(PageBreak())
 
         # ═══════════════════════════════════════════════════════════════════════
-        # Section 11 -- Sanction Recommendation
+        # Section 12 -- Sanction Recommendation
         # ═══════════════════════════════════════════════════════════════════════
-        story.append(Paragraph("11. Sanction Recommendation", h1_style))
+        story.append(Paragraph("12. Sanction Recommendation", h1_style))
         sr = cam.get("sanction_recommendation", {})
         story.append(Paragraph(sr.get("narrative",""), body_style))
 

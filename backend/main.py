@@ -86,10 +86,18 @@ async def upload_documents(
     files: list[UploadFile] = File(...),
     company_name: str = Form(...),
     due_diligence_notes: Optional[str] = Form(""),
+    cin: Optional[str] = Form(""),
+    pan: Optional[str] = Form(""),
+    sector: Optional[str] = Form(""),
+    turnover: Optional[str] = Form(""),
+    loan_type: Optional[str] = Form(""),
+    loan_amount_cr: Optional[str] = Form(""),
+    loan_tenure_years: Optional[str] = Form(""),
+    loan_interest_rate: Optional[str] = Form(""),
 ):
     """
-    Upload one or more company documents (PDF/Excel/CSV).
-    Returns a job_id. Poll /status/{job_id} for progress.
+    Upload documents + entity/loan details.
+    Quick-classifies each document and returns classifications for HITL review.
     """
     job_id = str(uuid.uuid4())
     job_dir = UPLOAD_DIR / job_id
@@ -102,21 +110,43 @@ async def upload_documents(
             shutil.copyfileobj(f.file, buf)
         saved_files.append(str(dest))
 
+    # Quick classification — parse each file and detect type
+    parser = PDFParser()
+    classifications = []
+    for fp_str in saved_files:
+        try:
+            parsed = parser.parse(fp_str)
+            doc_type = parsed.doc_type or "unknown"
+            confidence = round(parsed.extraction_confidence, 2)
+        except Exception:
+            doc_type = "unknown"
+            confidence = 0.0
+        classifications.append({
+            "file": Path(fp_str).name,
+            "detected_type": doc_type,
+            "confidence": confidence,
+        })
+
     JOBS[job_id] = {
-        "status": "queued",
+        "status": "classified",
         "progress": 0,
         "company_name": company_name,
         "due_diligence_notes": due_diligence_notes,
+        "entity": {"cin": cin or "", "pan": pan or "", "sector": sector or "", "turnover": turnover or ""},
+        "loan": {
+            "loan_type": loan_type or "",
+            "amount_cr": loan_amount_cr or "",
+            "tenure_years": loan_tenure_years or "",
+            "interest_rate": loan_interest_rate or "",
+        },
         "files": saved_files,
+        "classifications": classifications,
         "result": None,
         "error": None,
     }
+    _persist_job(job_id)
 
-    # Run pipeline in background (thread pool — keeps event loop free)
-    import asyncio
-    asyncio.create_task(_run_pipeline(job_id))
-
-    return {"job_id": job_id, "status": "queued", "files_received": len(saved_files)}
+    return {"job_id": job_id, "status": "classified", "files_received": len(saved_files), "classifications": classifications}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -218,6 +248,58 @@ async def set_llm_config(request: Request):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# PIPELINE START (after HITL classification review)
+# ─────────────────────────────────────────────────────────────────────────────
+@app.post("/api/pipeline/{job_id}/start")
+async def start_pipeline(job_id: str, request: Request):
+    """
+    Start the full analysis pipeline after the user has approved
+    the document classifications from the HITL review step.
+    """
+    if job_id not in JOBS:
+        raise HTTPException(404, "Job not found")
+    job = JOBS[job_id]
+    if job["status"] not in ("classified", "error"):
+        raise HTTPException(400, f"Cannot start pipeline: status={job['status']}")
+
+    body = await request.json()
+    approved = body.get("classifications", [])
+    if approved:
+        job["classifications"] = approved
+
+    job["status"] = "queued"
+    job["progress"] = 0
+    job["error"] = None
+    _persist_job(job_id)
+
+    import asyncio
+    asyncio.create_task(_run_pipeline(job_id))
+
+    return {"job_id": job_id, "status": "queued"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SCHEMA EDITOR ENDPOINTS
+# ─────────────────────────────────────────────────────────────────────────────
+@app.get("/api/schema")
+async def get_schema():
+    """Return the current SECTION_SCHEMAS used by the document segmenter."""
+    from ingestion.document_segmenter import SECTION_SCHEMAS
+    return SECTION_SCHEMAS
+
+
+@app.put("/api/schema")
+async def update_schema(request: Request):
+    """Update SECTION_SCHEMAS from the frontend schema editor."""
+    import ingestion.document_segmenter as seg_module
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Expected JSON object of doc_type → sections")
+    seg_module.SECTION_SCHEMAS.update(body)
+    return {"status": "ok", "types_updated": list(body.keys())}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # PIPELINE ORCHESTRATOR
 # ─────────────────────────────────────────────────────────────────────────────
 def _sync_pipeline(job_id: str):
@@ -225,7 +307,9 @@ def _sync_pipeline(job_id: str):
     job = JOBS[job_id]
     files = job["files"]
     company_name = job["company_name"]
-    dd_notes = job["due_diligence_notes"]
+    dd_notes = job.get("due_diligence_notes", "")
+    entity = job.get("entity", {})
+    loan_input = job.get("loan", {})
 
     def _update(status: str, progress: int):
         job["status"] = status
@@ -355,7 +439,12 @@ def _sync_pipeline(job_id: str):
         cam_gen  = CAMGenerator()
         cam_data = cam_gen.generate(
             company_name=company_name,
-            loan_request={"purpose": "Working Capital / Term Loan", "amount_crore": "As per computation"},
+            loan_request={
+                "purpose": loan_input.get("loan_type") or "Working Capital / Term Loan",
+                "amount_crore": loan_input.get("amount_cr") or "As per computation",
+                "tenure_years": loan_input.get("tenure_years") or "",
+                "interest_rate": loan_input.get("interest_rate") or "",
+            },
             decision=decision,
             features=features,
             shap_result=shap_out,
@@ -366,6 +455,7 @@ def _sync_pipeline(job_id: str):
             sector=sector_intel,
             research=research_report,
             doc_summaries=doc_summaries,
+            entity=entity,
         )
 
         exporter = PDFExporter()
@@ -542,6 +632,8 @@ def _sync_pipeline(job_id: str):
             "model_metrics":   credit_model.get_metrics(),
             "risk_radar":      cam_data.get("risk_radar", {}),
             "cam_ready":       True,
+            "entity":          entity,
+            "loan_input":      loan_input,
         }
 
         _update("done", 100)
