@@ -153,7 +153,10 @@ export default function AgentReports({ analysis, theme = "dark" }) {
   const fraud  = analysis?.fraud          || {};
   const promo  = analysis?.promoter       || {};
   const sector = analysis?.sector         || {};
-  const res    = analysis?.research       || {};
+  const res    = analysis?.research        || {};
+  const tri    = analysis?.triangulation   || {};
+  const pc     = analysis?.precognitive    || {};
+  const sr     = analysis?.secondary_research || {};
   const verif  = analysis?.verification   || {};
 
   const activeAgent = AGENTS.find(a => a.id === active);
@@ -297,26 +300,150 @@ export default function AgentReports({ analysis, theme = "dark" }) {
       {/* ── Research ────────────────────────────────────── */}
       {active === "res" && (
         <div className="fade-in-up">
+          {/* Top-line stats */}
           <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
             <StatCard label="News Sentiment" value={(res.news_sentiment_score || 0).toFixed(3)} color={res.news_sentiment_score > 0.6 ? "#EF4444" : "#10B981"} />
-            <StatCard label="Litigation Count" value={res.litigation_count || 0} color="#EF4444" />
-            <StatCard label="Regulatory Violations" value={res.regulatory_violation_count || 0} color="#F59E0B" />
+            <StatCard label="Macro Risk Score" value={(sr.macro_risk_score || 0).toFixed(2)} color={(sr.macro_risk_score || 0) > 0.5 ? "#EF4444" : "#10B981"} />
+            <StatCard label="Pre-Cognitive Risk" value={(pc.precognitive_risk_score || 0).toFixed(2)} color={(pc.precognitive_risk_score || 0) > 0.5 ? "#EF4444" : "#F59E0B"} />
+            <StatCard label="Triangulation Risk" value={(tri.triangulation_risk || 0).toFixed(2)} color={(tri.triangulation_risk || 0) > 0.4 ? "#EF4444" : "#10B981"} />
+            <StatCard label="Critical Warnings" value={pc.critical_count || 0} color="#EF4444" />
           </div>
 
-          {(res.articles || []).length > 0 && (
-            <SectionCard title="News Articles" color="#0EA5E9" icon="📰">
-              {res.articles.map((a, i) => (
+          {/* Macro environment */}
+          <SectionCard title="Macro Environment (Alpha Vantage)" color="#0EA5E9" icon="🌍">
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 10 }}>
+              {[
+                { label: "Rate Environment", val: sr.rate_environment },
+                { label: "GDP Signal",        val: sr.gdp_signal },
+                { label: "Banking Health",    val: sr.banking_health },
+                { label: "Company Trend",     val: sr.company_rating_trend },
+                { label: "Sector CR Quality", val: sr.sector_credit_quality },
+              ].map((item, i) => (
+                <div key={i} style={{
+                  padding: "8px 14px", borderRadius: 8, fontSize: 15, fontWeight: 600,
+                  background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+                  color: item.val === "DETERIORATING" || item.val === "HAWKISH" || item.val === "STRESS" ? "#EF4444"
+                       : item.val === "IMPROVING"    || item.val === "DOVISH"  || item.val === "STABLE"  ? "#10B981"
+                       : isDark ? "#f1f5f9" : "#1e293b",
+                }}>
+                  <span style={{ fontWeight: 400, fontSize: 13, display: "block", color: isDark ? "rgba(255,255,255,0.5)" : "#64748b" }}>{item.label}</span>
+                  {item.val || "—"}
+                </div>
+              ))}
+            </div>
+            {(sr.macro_signals || []).map((sig, i) => (
+              <div key={i} style={{ padding: "5px 10px", borderLeft: "3px solid #0EA5E9", marginBottom: 4, fontSize: 15 }}>
+                <b style={{ color: isDark ? "#e2e8f0" : "#1e293b" }}>{sig.category}:</b>{" "}
+                <span style={{ color: isDark ? "rgba(255,255,255,0.7)" : "#475569" }}>{sig.headline}</span>
+              </div>
+            ))}
+          </SectionCard>
+
+          {/* Credit Rating Intelligence */}
+          {(sr.rating_signals || []).length > 0 && (
+            <SectionCard title="Credit Rating Intelligence (Finnhub + NewsAPI)" color="#8B5CF6" icon="📊">
+              {(sr.rating_mentions || []).length > 0 && (
+                <p style={{ fontSize: 15, marginBottom: 8, color: isDark ? "#e2e8f0" : "#1e293b" }}>
+                  Rating mentions: <b>{sr.rating_mentions.join(", ")}</b>
+                </p>
+              )}
+              {sr.rating_signals.map((sig, i) => (
+                <div key={i} style={{
+                  padding: "8px 12px", borderRadius: 8, marginBottom: 5,
+                  background: sig.trend === "DETERIORATING" ? "rgba(239,68,68,0.07)" : sig.trend === "IMPROVING" ? "rgba(16,185,129,0.07)" : (isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"),
+                  borderLeft: `3px solid ${sig.trend === "DETERIORATING" ? "#EF4444" : sig.trend === "IMPROVING" ? "#10B981" : "#8B5CF6"}`,
+                }}>
+                  <span style={{ fontSize: 15, fontWeight: 600, color: isDark ? "#f1f5f9" : "#1e293b" }}>{sig.title}</span>
+                  <span style={{ marginLeft: 10, fontSize: 13, fontWeight: 700,
+                    color: sig.trend === "DETERIORATING" ? "#EF4444" : sig.trend === "IMPROVING" ? "#10B981" : "#94A3B8" }}>{sig.trend}</span>
+                  {sig.source && <span style={{ marginLeft: 8, fontSize: 12, color: "#94A3B8" }}>{sig.source}</span>}
+                </div>
+              ))}
+            </SectionCard>
+          )}
+
+          {/* News Articles */}
+          {(sr.top_news || res.articles || []).length > 0 && (
+            <SectionCard title="News Sentiment (NewsAPI + Finnhub + DDGS)" color="#0EA5E9" icon="📰">
+              {(sr.top_news || res.articles || []).map((a, i) => (
                 <div key={i} style={{
                   padding: "8px 12px", borderRadius: 10, marginBottom: 6,
                   background: a.sentiment === "NEGATIVE" ? "rgba(239,68,68,.06)" : a.sentiment === "POSITIVE" ? "rgba(16,185,129,.06)" : "rgba(0,0,0,.02)",
                   borderLeft: `3px solid ${a.sentiment === "NEGATIVE" ? "#EF4444" : a.sentiment === "POSITIVE" ? "#10B981" : "#94A3B8"}`,
                 }}>
-                  <p style={{ fontSize:17, color: isDark ? "#f1f5f9" : "#1E293B", fontWeight: 600, marginBottom: 2 }}>{a.title || a.url}</p>
-                  <span style={{
-                    fontSize:15, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
-                    background: a.sentiment === "NEGATIVE" ? "rgba(239,68,68,0.15)" : a.sentiment === "POSITIVE" ? "rgba(16,185,129,0.15)" : isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.06)",
-                    color: a.sentiment === "NEGATIVE" ? "#ef4444" : a.sentiment === "POSITIVE" ? "#10b981" : isDark ? "rgba(255,255,255,0.5)" : "#64748B",
-                  }}>{a.sentiment}</span>
+                  <p style={{ fontSize: 15, color: isDark ? "#f1f5f9" : "#1E293B", fontWeight: 600, marginBottom: 2 }}>{a.title || a.url}</p>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{
+                      fontSize: 13, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
+                      background: a.sentiment === "NEGATIVE" ? "rgba(239,68,68,0.15)" : a.sentiment === "POSITIVE" ? "rgba(16,185,129,0.15)" : isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.06)",
+                      color: a.sentiment === "NEGATIVE" ? "#ef4444" : a.sentiment === "POSITIVE" ? "#10b981" : isDark ? "rgba(255,255,255,0.5)" : "#64748B",
+                    }}>{a.sentiment || "NEUTRAL"}</span>
+                    {a.source && <span style={{ fontSize: 12, color: "#94A3B8" }}>{a.source}</span>}
+                  </div>
+                </div>
+              ))}
+            </SectionCard>
+          )}
+
+          {/* Triangulation */}
+          {(tri.signals || []).length > 0 && (
+            <SectionCard title="Data Triangulation (Document ↔ External Sources)" color="#F59E0B" icon="🔺">
+              <div style={{ display: "flex", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+                {[
+                  { label: "Corroborated", val: tri.corroborated_count, color: "#10B981" },
+                  { label: "Discrepancies", val: tri.discrepancy_count, color: "#EF4444" },
+                  { label: "Unverified", val: tri.unverified_count, color: "#F59E0B" },
+                ].map((x, i) => (
+                  <div key={i} style={{ padding: "6px 14px", borderRadius: 8, background: `${x.color}15`, color: x.color, fontWeight: 700, fontSize: 15 }}>
+                    {x.label}: {x.val || 0}
+                  </div>
+                ))}
+              </div>
+              {tri.signals.slice(0, 6).map((sig, i) => (
+                <div key={i} style={{
+                  padding: "8px 12px", borderRadius: 8, marginBottom: 5,
+                  background: sig.status === "DISCREPANCY" ? "rgba(239,68,68,0.07)" : sig.status === "CORROBORATED" ? "rgba(16,185,129,0.07)" : (isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"),
+                  borderLeft: `3px solid ${sig.status === "DISCREPANCY" ? "#EF4444" : sig.status === "CORROBORATED" ? "#10B981" : "#F59E0B"}`,
+                }}>
+                  <span style={{ fontWeight: 700, fontSize: 13,
+                    color: sig.status === "DISCREPANCY" ? "#EF4444" : sig.status === "CORROBORATED" ? "#10B981" : "#F59E0B" }}>
+                    {sig.status}
+                  </span>
+                  <span style={{ marginLeft: 8, fontWeight: 600, color: isDark ? "#e2e8f0" : "#1e293b", fontSize: 14 }}>{sig.signal_type}</span>
+                  {sig.detail && <p style={{ margin: "2px 0 0", fontSize: 13, color: isDark ? "rgba(255,255,255,0.6)" : "#64748B" }}>{sig.detail}</p>}
+                </div>
+              ))}
+            </SectionCard>
+          )}
+
+          {/* Pre-Cognitive Early Warnings */}
+          {(pc.signals || []).length > 0 && (
+            <SectionCard title="Pre-Cognitive Early Warning Signals" color="#EF4444" icon="⚡">
+              <p style={{ fontSize: 13, color: isDark ? "rgba(255,255,255,0.5)" : "#64748b", marginBottom: 10 }}>
+                Risk score: <b style={{ color: isDark ? "#f1f5f9" : "#1e293b" }}>{(pc.precognitive_risk_score || 0).toFixed(2)}</b>
+                {" · "}CRITICAL: <b style={{ color: "#EF4444" }}>{pc.critical_count || 0}</b>
+                {" · "}HIGH: <b style={{ color: "#F59E0B" }}>{pc.high_count || 0}</b>
+              </p>
+              {pc.signals.map((sig, i) => (
+                <div key={i} style={{
+                  padding: "10px 14px", borderRadius: 10, marginBottom: 8,
+                  background: sig.severity === "CRITICAL" ? "rgba(239,68,68,0.08)" : sig.severity === "HIGH" ? "rgba(245,158,11,0.08)" : (isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"),
+                  borderLeft: `4px solid ${sig.severity === "CRITICAL" ? "#EF4444" : sig.severity === "HIGH" ? "#F59E0B" : "#3B82F6"}`,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 4,
+                      background: sig.severity === "CRITICAL" ? "rgba(239,68,68,0.18)" : sig.severity === "HIGH" ? "rgba(245,158,11,0.18)" : "rgba(59,130,246,0.18)",
+                      color: sig.severity === "CRITICAL" ? "#EF4444" : sig.severity === "HIGH" ? "#F59E0B" : "#3B82F6",
+                    }}>{sig.severity}</span>
+                    <span style={{ fontWeight: 700, fontSize: 15, color: isDark ? "#f1f5f9" : "#1e293b" }}>{sig.title}</span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: 13, color: isDark ? "rgba(255,255,255,0.65)" : "#475569" }}>{sig.description}</p>
+                  {sig.action && (
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: isDark ? "rgba(255,255,255,0.45)" : "#64748b", fontStyle: "italic" }}>
+                      → {sig.action}
+                    </p>
+                  )}
                 </div>
               ))}
             </SectionCard>

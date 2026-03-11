@@ -37,6 +37,10 @@ frontend/build/
 Thumbs.db
 desktop.ini
 
+# Secrets
+.env
+*.env
+
 # IDE
 .vscode/settings.json
 .idea/

@@ -383,6 +383,27 @@ def _sync_pipeline(job_id: str):
             dd_notes=dd_notes,
         )
 
+        # ── PHASE 5b: Triangulation + Pre-Cognitive Risk ──────────────────────
+        _update("triangulating_signals", 70)
+
+        from research.triangulation_engine import TriangulationEngine
+        from research.precognitive_risk import PreCognitiveRiskEngine
+
+        triangulation = TriangulationEngine().triangulate(
+            research=research_report,
+            features=features,
+            doc_summaries=doc_summaries,
+        )
+        macro_intel   = research_report.get("macro", {})
+        cr_intel      = research_report.get("credit_ratings", {})
+        precognitive  = PreCognitiveRiskEngine().generate_signals(
+            research=research_report,
+            features=features,
+            macro=macro_intel,
+            triangulation=triangulation,
+            credit_ratings=cr_intel,
+        )
+
         _update("scoring", 75)
 
         # ── PHASE 6: Rule Engine + ML ─────────────────────────────────────────
@@ -456,6 +477,8 @@ def _sync_pipeline(job_id: str):
             research=research_report,
             doc_summaries=doc_summaries,
             entity=entity,
+            triangulation=triangulation,
+            precognitive=precognitive,
         )
 
         exporter = PDFExporter()
@@ -615,25 +638,28 @@ def _sync_pipeline(job_id: str):
         }
 
         job["result"] = {
-            "company_name":    company_name,
-            "decision":        decision,
-            "features":        features,
-            "rule_result":     rule_result,
-            "shap":            shap_out,
-            "evidence_graph":  evidence,
-            "verification":    verification_report,
-            "research":        research_report,
-            "document_agent":  doc_intel,
-            "fraud":           fraud_intel,
-            "fraud_graph":     fraud_graph,
-            "promoter":        promoter_intel,
-            "promoter_graph":  promoter_graph,
-            "sector":          sector_intel,
-            "model_metrics":   credit_model.get_metrics(),
-            "risk_radar":      cam_data.get("risk_radar", {}),
-            "cam_ready":       True,
-            "entity":          entity,
-            "loan_input":      loan_input,
+            "company_name":       company_name,
+            "decision":           decision,
+            "features":           features,
+            "rule_result":        rule_result,
+            "shap":               shap_out,
+            "evidence_graph":     evidence,
+            "verification":       verification_report,
+            "research":           research_report,
+            "document_agent":     doc_intel,
+            "fraud":              fraud_intel,
+            "fraud_graph":        fraud_graph,
+            "promoter":           promoter_intel,
+            "promoter_graph":     promoter_graph,
+            "sector":             sector_intel,
+            "model_metrics":      credit_model.get_metrics(),
+            "risk_radar":         cam_data.get("risk_radar", {}),
+            "cam_ready":          True,
+            "entity":             entity,
+            "loan_input":         loan_input,
+            "triangulation":      triangulation,
+            "precognitive":       precognitive,
+            "secondary_research": cam_data.get("secondary_research", {}),
         }
 
         _update("done", 100)

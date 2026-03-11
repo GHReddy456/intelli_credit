@@ -595,9 +595,168 @@ class PDFExporter:
         story.append(PageBreak())
 
         # ═══════════════════════════════════════════════════════════════════════
-        # Section 12 -- Sanction Recommendation
+        # Section 12 -- 360° Secondary Research & Pre-Cognitive Signals
         # ═══════════════════════════════════════════════════════════════════════
-        story.append(Paragraph("12. Sanction Recommendation", h1_style))
+        story.append(Paragraph("12. 360° Secondary Research & Pre-Cognitive Risk Signals", h1_style))
+        sr2 = cam.get("secondary_research", {})
+
+        # Macro overview row
+        macro_overview = [
+            ["Rate Environment", sr2.get("rate_environment", "—"),
+             "GDP Signal",       sr2.get("gdp_signal", "—"),
+             "Banking Health",   sr2.get("banking_health", "—"),
+             "Macro Risk Score", f"{sr2.get('macro_risk_score', 0):.2f}"],
+        ]
+        macro_t = Table(macro_overview, colWidths=[3.5*cm, 2.8*cm, 2.6*cm, 2.8*cm, 3*cm, 2.8*cm])
+        macro_t.setStyle(TableStyle([
+            ("FONTSIZE",   (0,0), (-1,-1), 8),
+            ("FONTNAME",   (0,0), (-1,-1), "Helvetica"),
+            ("FONTNAME",   (0,0), (0,-1),  "Helvetica-Bold"),
+            ("FONTNAME",   (0,2), (2,-1),  "Helvetica-Bold"),
+            ("FONTNAME",   (0,4), (4,-1),  "Helvetica-Bold"),
+            ("FONTNAME",   (0,6), (6,-1),  "Helvetica-Bold"),
+            ("BACKGROUND", (0,0), (-1,-1), LIGHT),
+            ("GRID",       (0,0), (-1,-1), 0.3, colors.lightgrey),
+            ("PADDING",    (0,0), (-1,-1), 5),
+        ]))
+        story.append(Spacer(1, 0.15*cm)); story.append(macro_t)
+
+        # Macro signals
+        macro_sigs = sr2.get("macro_signals", [])
+        if macro_sigs:
+            story.append(Spacer(1, 0.2*cm))
+            story.append(Paragraph("Key Macro Signals:", h2_style))
+            ms_data = [["Category", "Headline"]] + [
+                [sig.get("category",""), Paragraph(sig.get("headline",""), body_style)]
+                for sig in macro_sigs
+            ]
+            ms_t = Table(ms_data, colWidths=[4*cm, 13.5*cm])
+            ms_t.setStyle(TableStyle([
+                ("FONTSIZE",   (0,0), (-1,-1), 8),
+                ("FONTNAME",   (0,0), (-1,0),  "Helvetica-Bold"),
+                ("ROWBACKGROUNDS", (0,1), (-1,-1), [WHITE, LIGHT]),
+                ("GRID",       (0,0), (-1,-1), 0.3, colors.lightgrey),
+                ("PADDING",    (0,0), (-1,-1), 5),
+            ]))
+            story.append(ms_t)
+
+        # Rating signals
+        story.append(Spacer(1, 0.2*cm))
+        story.append(Paragraph(
+            f"Credit Rating Intelligence — Company Trend: "
+            f"<b>{sr2.get('company_rating_trend','—')}</b>  |  "
+            f"Sector Credit Quality: <b>{sr2.get('sector_credit_quality','—')}</b>  |  "
+            f"Mentions: {', '.join(sr2.get('rating_mentions',[])) or '—'}",
+            body_style,
+        ))
+        rating_sigs = sr2.get("rating_signals", [])
+        if rating_sigs:
+            rs_data = [["Signal Title", "Source", "Trend"]] + [
+                [Paragraph(s.get("title",""), body_style), s.get("source",""), s.get("trend","")]
+                for s in rating_sigs
+            ]
+            rs_t = Table(rs_data, colWidths=[9*cm, 5*cm, 3.5*cm])
+            rs_t.setStyle(TableStyle([
+                ("FONTSIZE",   (0,0), (-1,-1), 8),
+                ("FONTNAME",   (0,0), (-1,0),  "Helvetica-Bold"),
+                ("ROWBACKGROUNDS", (0,1), (-1,-1), [WHITE, LIGHT]),
+                ("GRID",       (0,0), (-1,-1), 0.3, colors.lightgrey),
+                ("PADDING",    (0,0), (-1,-1), 5),
+            ]))
+            story.append(Spacer(1, 0.15*cm)); story.append(rs_t)
+
+        # Top news
+        top_news = sr2.get("top_news", [])
+        if top_news:
+            story.append(Spacer(1, 0.2*cm))
+            story.append(Paragraph("Recent News Sentiment:", h2_style))
+            news_data = [["Headline", "Source", "Sentiment"]] + [
+                [Paragraph(n.get("title",""), body_style), n.get("source",""), n.get("sentiment","")]
+                for n in top_news
+            ]
+            news_t = Table(news_data, colWidths=[10*cm, 4.5*cm, 3*cm])
+            news_t.setStyle(TableStyle([
+                ("FONTSIZE",   (0,0), (-1,-1), 8),
+                ("FONTNAME",   (0,0), (-1,0),  "Helvetica-Bold"),
+                ("ROWBACKGROUNDS", (0,1), (-1,-1), [WHITE, LIGHT]),
+                ("GRID",       (0,0), (-1,-1), 0.3, colors.lightgrey),
+                ("PADDING",    (0,0), (-1,-1), 5),
+            ]))
+            story.append(news_t)
+
+        # Triangulation summary
+        tri = sr2.get("triangulation", {})
+        story.append(Spacer(1, 0.2*cm))
+        story.append(Paragraph(
+            f"Triangulation — Corroborated: <b>{tri.get('corroborated',0)}</b>  |  "
+            f"Discrepancies: <b>{tri.get('discrepancies',0)}</b>  |  "
+            f"Unverified: <b>{tri.get('unverified',0)}</b>  |  "
+            f"Risk Score: <b>{tri.get('risk_score',0):.2f}</b>",
+            body_style,
+        ))
+        tri_sigs = tri.get("top_signals", [])
+        if tri_sigs:
+            t_data = [["Signal Type", "Status", "Detail"]] + [
+                [s.get("type",""), s.get("status",""),
+                 Paragraph(s.get("detail",""), body_style)]
+                for s in tri_sigs
+            ]
+            t_t = Table(t_data, colWidths=[4.5*cm, 3.5*cm, 9.5*cm])
+            t_t.setStyle(TableStyle([
+                ("FONTSIZE",   (0,0), (-1,-1), 8),
+                ("FONTNAME",   (0,0), (-1,0),  "Helvetica-Bold"),
+                ("ROWBACKGROUNDS", (0,1), (-1,-1), [WHITE, LIGHT]),
+                ("GRID",       (0,0), (-1,-1), 0.3, colors.lightgrey),
+                ("PADDING",    (0,0), (-1,-1), 5),
+            ]))
+            story.append(Spacer(1, 0.15*cm)); story.append(t_t)
+
+        # Pre-cognitive early warnings
+        pc = sr2.get("precognitive", {})
+        story.append(Spacer(1, 0.2*cm))
+        story.append(Paragraph("Pre-Cognitive Early Warning Signals", h2_style))
+        story.append(Paragraph(
+            f"Pre-Cognitive Risk Score: <b>{pc.get('risk_score',0):.2f}</b>  |  "
+            f"CRITICAL: <b>{pc.get('critical_count',0)}</b>  |  "
+            f"HIGH: <b>{pc.get('high_count',0)}</b>",
+            body_style,
+        ))
+        pc_warns = pc.get("warnings", [])
+        if pc_warns:
+            _sev_colors = {"CRITICAL": colors.HexColor("#C0392B"),
+                           "HIGH":     colors.HexColor("#E67E22"),
+                           "MEDIUM":   colors.HexColor("#2980B9")}
+            pc_data = [["Severity", "Signal", "Description", "Recommended Action"]]
+            for w in pc_warns:
+                sev = w.get("severity", "MEDIUM")
+                sev_color = _sev_colors.get(sev, colors.black)
+                sev_para = Paragraph(
+                    f'<font color="#{"%02x%02x%02x" % tuple(int(sev_color.hexval()[1:][i:i+2],16) for i in (0,2,4))}"><b>{sev}</b></font>',
+                    body_style,
+                )
+                pc_data.append([
+                    sev_para,
+                    Paragraph(w.get("title",""), body_style),
+                    Paragraph(w.get("description",""), body_style),
+                    Paragraph(w.get("action",""), body_style),
+                ])
+            pc_t = Table(pc_data, colWidths=[2.5*cm, 3.5*cm, 6.5*cm, 5*cm])
+            pc_t.setStyle(TableStyle([
+                ("FONTSIZE",   (0,0), (-1,-1), 8),
+                ("FONTNAME",   (0,0), (-1,0),  "Helvetica-Bold"),
+                ("ROWBACKGROUNDS", (0,1), (-1,-1), [WHITE, LIGHT]),
+                ("GRID",       (0,0), (-1,-1), 0.3, colors.lightgrey),
+                ("PADDING",    (0,0), (-1,-1), 5),
+                ("VALIGN",     (0,0), (-1,-1), "TOP"),
+            ]))
+            story.append(Spacer(1, 0.15*cm)); story.append(pc_t)
+
+        story.append(PageBreak())
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # Section 13 -- Sanction Recommendation
+        # ═══════════════════════════════════════════════════════════════════════
+        story.append(Paragraph("13. Sanction Recommendation", h1_style))
         sr = cam.get("sanction_recommendation", {})
         story.append(Paragraph(sr.get("narrative",""), body_style))
 

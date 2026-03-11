@@ -84,6 +84,8 @@ class CAMGenerator:
         research:      Dict[str, Any],
         doc_summaries: List[Dict],
         entity:        Optional[Dict[str, Any]] = None,
+        triangulation: Optional[Dict[str, Any]] = None,
+        precognitive:  Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         logger.info(f"[CAM] Generating appraisal memo for {company_name}")
 
@@ -185,6 +187,9 @@ class CAMGenerator:
                 "policy_score": decision.get("policy_score", 0),
             },
             "risk_radar": self._risk_radar(decision, features),
+            # Section 12 — 360° Secondary Research & Pre-Cognitive Signals
+            "secondary_research": self._secondary_research_section(
+                research, triangulation or {}, precognitive or {}),
         }
         # Attach structured SWOT (built inside _exec_summary)
         cam["swot"] = getattr(self, "_last_swot", {
@@ -735,3 +740,80 @@ class CAMGenerator:
                 case_strs.append(f"{case_name} ({case_type})")
             summary += " Key cases: " + "; ".join(case_strs) + "."
         return summary
+
+    # =========================================================================
+    # Section 12 — 360° Secondary Research & Pre-Cognitive Risk
+    # =========================================================================
+    def _secondary_research_section(
+        self,
+        research: Dict[str, Any],
+        triangulation: Dict[str, Any],
+        precognitive: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        macro  = research.get("macro", {})
+        cr     = research.get("credit_ratings", {})
+        news   = research.get("news", {})
+        lit    = research.get("litigation", {})
+
+        # Top news headlines (up to 5)
+        articles = news.get("articles", []) if isinstance(news, dict) else []
+        top_news = [
+            {"title": a.get("title", ""), "sentiment": a.get("sentiment", "NEUTRAL"),
+             "source": a.get("source", "")}
+            for a in articles[:5]
+        ]
+
+        # Macro signals
+        macro_signals = []
+        for key in ["rbi_policy", "gdp_growth", "banking", "global", "commodity"]:
+            items = macro.get(key, [])
+            if items:
+                macro_signals.append({
+                    "category": key.replace("_", " ").title(),
+                    "headline": items[0][:120] if isinstance(items[0], str) else str(items[0])[:120],
+                })
+
+        # Credit rating signals
+        rating_signals = cr.get("agency_signals", [])[:5]
+
+        # Triangulation summary
+        tri_signals = triangulation.get("signals", [])
+        tri_summary = {
+            "corroborated": triangulation.get("corroborated_count", 0),
+            "discrepancies": triangulation.get("discrepancy_count", 0),
+            "unverified": triangulation.get("unverified_count", 0),
+            "risk_score": round(triangulation.get("triangulation_risk", 0), 3),
+            "top_signals": [
+                {"type": s.get("signal_type", ""), "status": s.get("status", ""),
+                 "detail": s.get("detail", "")}
+                for s in tri_signals[:4]
+            ],
+        }
+
+        # Pre-cognitive early warnings
+        pc_signals = precognitive.get("signals", [])
+        pc_summary = {
+            "risk_score": round(precognitive.get("precognitive_risk_score", 0), 3),
+            "critical_count": precognitive.get("critical_count", 0),
+            "high_count": precognitive.get("high_count", 0),
+            "warnings": [
+                {"title": s.get("title", ""), "severity": s.get("severity", "MEDIUM"),
+                 "description": s.get("description", ""), "action": s.get("action", "")}
+                for s in pc_signals[:6]
+            ],
+        }
+
+        return {
+            "macro_risk_score":   round(macro.get("macro_risk_score", 0), 3),
+            "rate_environment":   macro.get("rate_environment", "UNKNOWN"),
+            "gdp_signal":         macro.get("gdp_signal", "UNKNOWN"),
+            "banking_health":     macro.get("banking_health", "UNKNOWN"),
+            "macro_signals":      macro_signals,
+            "company_rating_trend":  cr.get("company_rating_trend", "STABLE"),
+            "sector_credit_quality": cr.get("sector_credit_quality", "STABLE"),
+            "rating_mentions":    cr.get("company_rating_mentions", []),
+            "rating_signals":     rating_signals,
+            "top_news":           top_news,
+            "triangulation":      tri_summary,
+            "precognitive":       pc_summary,
+        }

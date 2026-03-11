@@ -85,6 +85,11 @@ SECTOR_RISK = {
     "default":        0.50,
 }
 
+# ── API Keys (loaded from .env) ──────────────────────────────────────────────
+NEWSAPI_KEY       = os.getenv("NEWSAPI_KEY", "")
+FINNHUB_KEY       = os.getenv("FINNHUB_KEY", "")
+ALPHAVANTAGE_KEY  = os.getenv("ALPHAVANTAGE_KEY", "")
+
 # ── Research ─────────────────────────────────────────────────────────────────
 NEWS_LOOKBACK_DAYS            = 730    # 2 years
 MAX_NEWS_ARTICLES             = 20
