@@ -17,23 +17,29 @@ Intelli-Credit automates the full credit underwriting workflow: upload a borrowe
    - [Promoter Intelligence Agent](#43-promoter-intelligence-agent)
    - [Sector Intelligence Agent](#44-sector-intelligence-agent)
    - [Research Agent (Orchestrator)](#45-research-agent-orchestrator)
-5. [Backend Modules](#5-backend-modules)
-   - [Ingestion](#51-ingestion)
-   - [Financial Verification](#52-financial-verification)
-   - [Feature Engine](#53-feature-engine)
-   - [Rule Engine](#54-rule-engine)
-   - [Credit Model (ML)](#55-credit-model-ml)
-   - [SHAP Explainability](#56-shap-explainability)
-   - [Evidence Graph](#57-evidence-graph)
-   - [Decision Engine](#58-decision-engine)
-   - [CAM Generator + PDF Exporter](#59-cam-generator--pdf-exporter)
-6. [API Reference](#6-api-reference)
-7. [Frontend](#7-frontend)
-8. [Configuration & Thresholds](#8-configuration--thresholds)
-9. [LLM Integration (Optional)](#9-llm-integration-optional)
-10. [Setup & Running](#10-setup--running)
-11. [Project Structure](#11-project-structure)
-12. [Key Design Decisions](#12-key-design-decisions)
+5. [360° Secondary Research](#5-360-secondary-research)
+   - [News Scraper (Multi-source)](#51-news-scraper-multi-source)
+   - [Macro Intelligence](#52-macro-intelligence)
+   - [Credit Rating Scraper](#53-credit-rating-scraper)
+   - [Triangulation Engine](#54-triangulation-engine)
+   - [Pre-Cognitive Risk Engine](#55-pre-cognitive-risk-engine)
+6. [Backend Modules](#6-backend-modules)
+   - [Ingestion](#61-ingestion)
+   - [Financial Verification](#62-financial-verification)
+   - [Feature Engine](#63-feature-engine)
+   - [Rule Engine](#64-rule-engine)
+   - [Credit Model (ML)](#65-credit-model-ml)
+   - [SHAP Explainability](#66-shap-explainability)
+   - [Evidence Graph](#67-evidence-graph)
+   - [Decision Engine](#68-decision-engine)
+   - [CAM Generator + PDF Exporter](#69-cam-generator--pdf-exporter)
+7. [API Reference](#7-api-reference)
+8. [Frontend](#8-frontend)
+9. [Configuration & Thresholds](#9-configuration--thresholds)
+10. [LLM Integration (Optional)](#10-llm-integration-optional)
+11. [Setup & Running](#11-setup--running)
+12. [Project Structure](#12-project-structure)
+13. [Key Design Decisions](#13-key-design-decisions)
 
 ---
 
@@ -44,8 +50,9 @@ Intelli-Credit automates the full credit underwriting workflow: upload a borrowe
 | **Domain** | Indian corporate credit underwriting (MSME / Mid-corporate) |
 | **Stack** | FastAPI (backend) · React 18 (frontend) · XGBoost (ML) · NetworkX (graphs) |
 | **LLM** | Optional Ollama integration (`phi3:mini` by default) — degrades gracefully to rule-based fallback |
-| **Output** | Credit score (0–100), risk grade (AAA–D), loan recommendation, PD estimate, SHAP attribution, network graphs, and a bank-format PDF CAM |
-| **Latency** | Full pipeline run: ~30–90 s (depending on document count and LLM usage) |
+| **External APIs** | NewsAPI · Finnhub · Alpha Vantage — real-time news, market sentiment, macro signals |
+| **Output** | Credit score (0–100), risk grade (AAA–D), loan recommendation, PD estimate, SHAP attribution, network graphs, triangulation signals, pre-cognitive risk warnings, and a bank-format PDF CAM (13 sections) |
+| **Latency** | Full pipeline run: ~45–120 s (depending on document count, external API calls, and LLM usage) |
 
 The engine accepts any combination of:
 - Annual Reports / Audited Financials (PDF)
@@ -116,13 +123,13 @@ Document Files (PDF/Excel/CSV)
    └────────────────────────────┘
         │
         ▼ Phase 3 — Research (35 → 50)
-   ┌──────────────────────────────────────────────────────────────────┐
-   │ ResearchAgent (parallel threads)                                 │
-   │   • NewsScraper       — sentiment from headlines                 │
-   │   • LitigationDetector— court case signals in docs / news        │
-   │   • MCAParser         — director list, charges, filings          │
-   │   • SectorAnalyzer    — sector risk + regulatory mentions        │
-   └──────────────────────────────────────────────────────────────────┘
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │ ResearchAgent (parallel threads)                                     │
+   │   Wave A: NewsScraper (NewsAPI+Finnhub+DDGS) · MCAParser · Macro     │
+   │           (Alpha Vantage NEWS_SENTIMENT)                             │
+   │   Wave B: LitigationDetector · SectorAnalyzer · CreditRatingScraper  │
+   │           (Finnhub+NewsAPI+DDGS rating signals)                      │
+   └──────────────────────────────────────────────────────────────────────┘
         │
         ▼ Phase 4 — AI Agents (50 → 65)
    ┌─────────────────────────┐  ┌──────────────────────┐
@@ -136,9 +143,13 @@ Document Files (PDF/Excel/CSV)
    │ shell network detection │  │ headwinds/tailwinds  │
    └─────────────────────────┘  └──────────────────────┘
         │
-        ▼ Phase 5 — Feature Engineering (65 → 75)
+        ▼ Phase 5 — Feature Engineering (65 → 70)
    25 numerical features extracted (revenue growth, EBITDA margin,
    D/E, DSCR, GST mismatch, fraud scores, promoter risk, …)
+        │
+        ▼ Phase 5b — Triangulation + Pre-Cognitive Risk (70 → 75)
+   TriangulationEngine cross-references external research vs document features.
+   PreCognitiveRiskEngine generates 7 early-warning signal types.
         │
         ▼ Phase 6 — Rule Engine + XGBoost ML (75 → 85)
    Hard-reject rules checked first → if triggered, ML bypassed.
@@ -152,10 +163,12 @@ Document Files (PDF/Excel/CSV)
    Loan amount, interest rate, conditions, risk grade, PD.
         │
         ▼ Phase 9 — CAM Generation + PDF Export (95 → 100)
-   11-section CAM assembled → rendered to PDF via ReportLab.
+   13-section CAM assembled → rendered to PDF via ReportLab.
+   Includes SWOT (Section 2), 360° Research & Pre-Cognitive Signals (Section 12).
         │
         ▼ Phase 10 — Result Assembly
-   Full JSON (scores, graphs, agent reports, evidence) → stored in job.
+   Full JSON (scores, graphs, agent reports, evidence, triangulation,
+   precognitive, secondary_research) → stored in job.
 ```
 
 ---
@@ -351,31 +364,38 @@ Document Files (PDF/Excel/CSV)
 
 **File:** `research/research_agent.py`
 
-**Purpose:** Orchestrates all external research modules in parallel threads and aggregates their outputs into a unified research report consumed by the AI agents and Feature Engine.
+**Purpose:** Orchestrates all external research modules in two parallel waves and aggregates their outputs into a unified research report consumed by the AI agents, Feature Engine, Triangulation Engine, and Pre-Cognitive Risk Engine.
 
 **What it does:**
 
-1. **Promoter Name Extraction** — Parses document text with regex patterns to identify up to 5 named promoters/directors (looks for titles like "Managing Director", "Chairman", "CEO" followed by proper names).
+1. **Promoter Name Extraction** — Parses document text with regex patterns to identify up to 5 named promoters/directors.
 
-2. **Parallel Research Execution** — Spins up 4 parallel threads:
+2. **Wave A — Parallel (45 s timeout):**
 
    | Thread | Module | What it finds |
    |--------|--------|---------------|
-   | T1 | `NewsScraper` | Recent headlines, assigns POSITIVE/NEGATIVE/NEUTRAL sentiment, computes aggregate `news_sentiment_score` |
+   | T1 | `NewsScraper` | NewsAPI + Finnhub + DuckDuckGo headlines; POSITIVE/NEGATIVE/NEUTRAL sentiment |
    | T2 | `MCAParser` | Director list, company charges, MCA filing status, registered address |
-   | T3 | `LitigationDetector` | Court case mentions (DRT, NCLT, High Court) from documents and news; severity classification |
-   | T4 | `SectorAnalyzer` | Sector identification, baseline risk score, regulatory mentions |
+   | T3 | `MacroIntelligence` | Alpha Vantage macro signals: RBI policy, GDP, banking health, commodity trends |
 
-   Note: Litigation and Sector analysis start after news completes (they consume news results), so the actual execution is a 2-wave parallel: T1+T2 → T3+T4.
+3. **Wave B — Parallel (uses Wave A news results):**
 
-3. **Research Risk Score** — Combines:
+   | Thread | Module | What it finds |
+   |--------|--------|---------------|
+   | T4 | `LitigationDetector` | Court case mentions (DRT, NCLT, High Court); severity classification |
+   | T5 | `SectorAnalyzer` | Sector identification, baseline risk score, regulatory mentions |
+   | T6 | `CreditRatingScraper` | CRISIL/ICRA/CARE rating signals via Finnhub + NewsAPI + DDGS |
+
+4. **Research Risk Score** — Updated weighted formula:
    ```
-   research_risk = (1 - news_sentiment) × 0.30
-                 + litigation_severity  × 0.50
-                 + sector_risk          × 0.20
+   research_risk = news_sentiment          × 0.25
+                 + litigation_severity     × 0.35
+                 + sector_risk             × 0.20
+                 + macro_risk_score        × 0.10
+                 + credit_rating_risk      × 0.10
    ```
 
-**Output (flat + nested):**
+**Output:**
 ```json
 {
   "company_name": "...",
@@ -384,15 +404,112 @@ Document Files (PDF/Excel/CSV)
   "litigation": { "cases": [...], "litigation_count": 2, "litigation_severity_score": 0.3 },
   "mca": { "director_list": [...], "company_charges": [...] },
   "sector": { "sector": "auto", "sector_risk_score": 0.50 },
-  "research_risk_score": 0.38
+  "macro": { "macro_risk_score": 0.35, "rate_environment": "HAWKISH", "gdp_signal": "STABLE" },
+  "credit_ratings": { "company_rating_trend": "STABLE", "agency_signals": [...] },
+  "research_risk_score": 0.38,
+  "macro_risk_score": 0.35
 }
 ```
 
 ---
 
-## 5. Backend Modules
+## 5. 360° Secondary Research
 
-### 5.1 Ingestion
+All modules live in `research/`. They run automatically as part of the pipeline and their outputs flow into CAM Section 12 and the Research tab of the frontend.
+
+### 5.1 News Scraper (Multi-source)
+
+**File:** `research/news_scraper.py`
+
+Fetches recent news in parallel from three sources, deduplicates by URL, and scores sentiment using domain-specific positive/negative keyword vocabularies.
+
+| Source | Method | Notes |
+|--------|--------|-------|
+| **NewsAPI** | `GET /v2/everything` — 8 targeted queries (fraud, GST, litigation, default…) | Primary. Requires `NEWSAPI_KEY`. |
+| **Finnhub** | `GET /api/v1/company-news` + general business news endpoint | Secondary. Requires `FINNHUB_KEY`. |
+| **DuckDuckGo** | `ddgs.text()` — 8 fallback queries | Fallback. No key required. |
+
+Each article carries `title`, `source`, `provider`, `sentiment` (POSITIVE / NEGATIVE / NEUTRAL), and `url`.
+
+---
+
+### 5.2 Macro Intelligence
+
+**File:** `research/macro_intelligence.py`
+
+Scrapes Indian macroeconomic signals and classifies them into 5 categories.
+
+| Source | Data |
+|--------|------|
+| **Alpha Vantage** `NEWS_SENTIMENT` | Topics: `economy_macro`, `financial_markets`, `finance` — up to 50 items |
+| **DuckDuckGo** (fallback) | RBI policy, GDP, inflation, commodity prices |
+
+**Signal categories:** `rbi_policy`, `gdp_growth`, `banking`, `global`, `commodity`
+
+**Output keys:** `macro_risk_score`, `rate_environment` (HAWKISH/NEUTRAL/DOVISH), `gdp_signal` (POSITIVE/STABLE/NEGATIVE), `banking_health` (STABLE/STRESS/RECOVERY)
+
+---
+
+### 5.3 Credit Rating Scraper
+
+**File:** `research/credit_rating_scraper.py`
+
+Searches for CRISIL / ICRA / CARE / India Ratings / Fitch India signals for a company and its sector.
+
+| Source | Method |
+|--------|--------|
+| **Finnhub** | `company-news` endpoint — filters for rating/downgrade/upgrade/NPA keywords |
+| **NewsAPI** | Two queries: company-specific ratings + sector credit quality |
+| **DuckDuckGo** | 4 targeted queries — company ratings + sector NPA/GNPA |
+
+**Output:** `company_rating_mentions` (extracted rating symbols), `company_rating_trend` (DETERIORATING / STABLE / IMPROVING), `sector_credit_quality`, `agency_signals` (list of up to 6 signals with trend classification)
+
+---
+
+### 5.4 Triangulation Engine
+
+**File:** `research/triangulation_engine.py`
+
+Cross-references external research data against document-derived features to classify signals as **CORROBORATED**, **DISCREPANCY**, or **UNVERIFIED**.
+
+| Signal Type | What it compares |
+|-------------|------------------|
+| Fraud Corroboration | News negative sentiment vs. document fraud analysis |
+| Litigation Discrepancy | External web signals vs. litigation found in uploaded docs |
+| Financial Stress | Multi-source corroboration (news + GST mismatch + DSCR) |
+| Revenue Underreporting | GST + ITR divergence signals |
+| Promoter Integrity | Network analysis + external media |
+| Sector Alignment | Company performance vs. sector outlook |
+
+**Output:** `signals` (list), `corroborated_count`, `discrepancy_count`, `unverified_count`, `triangulation_risk` (0–1)
+
+---
+
+### 5.5 Pre-Cognitive Risk Engine
+
+**File:** `research/precognitive_risk.py`
+
+Generates early-warning signals that detect stress **before** a default crystallizes, drawing on the combined output of all research, feature, macro, triangulation, and credit rating modules.
+
+| Signal | Severity | Trigger |
+|--------|----------|---------|
+| Triple Leverage Trap | CRITICAL | High D/E + high coverage burden + negative macro |
+| Multi-Stream Fraud Convergence | CRITICAL | Benford + circular trading + news fraud signals aligned |
+| Macro Compounding Risk | HIGH | Hawkish rates + sector stress + DSCR near threshold |
+| Rating Deterioration | HIGH | DETERIORATING rating trend + negative news |
+| Liquidity Risk | HIGH | Low current ratio + negative cash-flow indicators |
+| Selective Disclosure | MEDIUM | Triangulation discrepancy detected |
+| Customer Concentration | MEDIUM | Single-customer revenue concentration > 40% |
+
+Each signal includes `category`, `severity`, `title`, `description`, and a recommended `action`.
+
+**Output:** `signals`, `critical_count`, `high_count`, `medium_count`, `precognitive_risk_score` (0–1)
+
+---
+
+## 6. Backend Modules
+
+### 6.1 Ingestion
 
 | Module | File | Responsibility |
 |--------|------|---------------|
@@ -406,7 +523,7 @@ Document Files (PDF/Excel/CSV)
 
 ---
 
-### 5.2 Financial Verification
+### 6.2 Financial Verification
 
 **File:** `verification/financial_consistency_engine.py`
 
@@ -422,7 +539,7 @@ Produces `mismatch_scores` (0–1 for each check) consumed by both the Fraud Det
 
 ---
 
-### 5.3 Feature Engine
+### 6.3 Feature Engine
 
 **File:** `features/feature_engine.py`
 
@@ -458,7 +575,7 @@ Computes exactly **25 numerical features** from all upstream outputs, forming th
 
 ---
 
-### 5.4 Rule Engine
+### 6.4 Rule Engine
 
 **File:** `rules/rule_engine.py`
 
@@ -493,7 +610,7 @@ Deterministic credit policy rules applied **before** the ML model. Hard reject r
 
 ---
 
-### 5.5 Credit Model (ML)
+### 6.5 Credit Model (ML)
 
 **File:** `models/credit_model.py`
 
@@ -523,7 +640,7 @@ An **XGBoost classifier** trained on a synthetic Indian corporate credit dataset
 
 ---
 
-### 5.6 SHAP Explainability
+### 6.6 SHAP Explainability
 
 **File:** `explainability/shap_explainer.py`
 
@@ -535,7 +652,7 @@ Uses the SHAP (SHapley Additive exPlanations) library with the XGBoost model's t
 
 ---
 
-### 5.7 Evidence Graph
+### 6.7 Evidence Graph
 
 **File:** `explainability/evidence_graph.py`
 
@@ -559,7 +676,7 @@ Each feature node carries metadata about which document type it came from (e.g.,
 
 ---
 
-### 5.8 Decision Engine
+### 6.8 Decision Engine
 
 **File:** `decision/decision_engine.py`
 
@@ -600,43 +717,47 @@ blended_score = rule_adjusted_score × 0.60 + credit_score × 0.40
 
 ---
 
-### 5.9 CAM Generator + PDF Exporter
+### 6.9 CAM Generator + PDF Exporter
 
 **Files:** `cam/cam_generator.py`, `cam/pdf_exporter.py`
 
-**CAM Generator** assembles an 11-section Credit Appraisal Memo dictionary following Indian bank CAM format:
+**CAM Generator** assembles a **13-section** Credit Appraisal Memo dictionary following Indian bank CAM format:
 
 | Section | Content |
-|---------|---------|
+|---------|--------|
 | 1. Executive Summary | Verdict, credit score, grade, recommended amount & rate |
-| 2. Borrower Profile | Company details, promoters, MCA status, sector |
-| 3. Facility Structure | Loan purpose, amount, tenure, security, rate |
-| 4. Five Cs Analysis | Character/Capacity/Capital/Collateral/Conditions scored |
-| 5. Financial Ratios | All 25 features with industry benchmarks |
-| 6. Fraud & Integrity Assessment | Fraud score, circular trading findings, Benford results |
-| 7. Promoter & Governance | Network risk, litigation, shell entity flags |
-| 8. Sector Outlook | Sector risk, headwinds, tailwinds, regulatory environment |
-| 9. AI Risk Attribution | SHAP waterfall — top 10 feature contributors |
-| 10. Evidence Traceability | Feature → source document mapping |
-| 11. Sanction Recommendation | Conditions precedent, monitoring covenants |
+| 2. SWOT Analysis | Color-coded 2×2 quadrant (Strengths / Weaknesses / Opportunities / Threats) |
+| 3. Borrower Profile | Company details, promoters, MCA status, sector |
+| 4. Facility Structure | Loan purpose, amount, tenure, security, rate |
+| 5. Five Cs Analysis | Character/Capacity/Capital/Collateral/Conditions scored |
+| 6. Financial Ratios | All 25 features with industry benchmarks |
+| 7. Fraud & Integrity Assessment | Fraud score, circular trading findings, Benford results |
+| 8. Promoter & Governance | Network risk, litigation, shell entity flags |
+| 9. Sector Outlook | Sector risk, headwinds, tailwinds, regulatory environment |
+| 10. AI Risk Attribution | SHAP waterfall — top 10 feature contributors |
+| 11. Evidence Traceability | Feature → source document mapping |
+| 12. 360° Secondary Research & Pre-Cognitive Signals | Macro environment (Alpha Vantage), credit rating trend (Finnhub/NewsAPI), top news, triangulation signals, pre-cognitive early warnings |
+| 13. Sanction Recommendation | Conditions precedent, monitoring covenants |
 
 **PDF Exporter** renders the CAM dict to a formatted PDF using ReportLab with:
 - Bank-style header and footer with page numbers
 - Color-coded verdict banner (green/amber/red)
+- SWOT 2×2 color-coded quadrant table
 - SHAP bar chart embedded as vector graphics
 - Tables for financial ratios with peer benchmarks
+- Pre-cognitive warnings with CRITICAL/HIGH/MEDIUM severity color coding
 
 Output path: `cam_outputs/{job_id}_CAM.pdf`
 
 ---
 
-## 6. API Reference
+## 7. API Reference
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/upload` | Upload documents. Form fields: `files[]`, `company_name`, `due_diligence_notes`. Returns `{job_id}`. |
 | `GET` | `/api/status/{job_id}` | Poll pipeline progress. Returns `{status, progress 0–100, error}`. |
-| `GET` | `/api/analysis/{job_id}` | Full result JSON (only when status=`done`). |
+| `GET` | `/api/analysis/{job_id}` | Full result JSON (only when status=`done`). Now includes `triangulation`, `precognitive`, `secondary_research`. |
 | `HEAD` | `/api/cam/{job_id}/download` | Check if PDF is ready (200 / 404). |
 | `GET` | `/api/cam/{job_id}/download` | Stream CAM PDF. |
 | `GET` | `/api/health` | Health check: `{status: "ok"}`. |
@@ -648,13 +769,13 @@ Output path: `cam_outputs/{job_id}_CAM.pdf`
 
 ```
 queued → parsing_documents → verifying_financials → running_research →
-running_agents → computing_features → scoring → explaining →
-deciding → generating_cam → done
+running_agents → computing_features → triangulating_signals → scoring →
+explaining → deciding → generating_cam → done
 ```
 
 ---
 
-## 7. Frontend
+## 8. Frontend
 
 **Stack:** React 18 · Create React App · Inline styles · D3.js (network graphs) · Recharts (bar/radar charts)
 
@@ -668,10 +789,20 @@ deciding → generating_cam → done
 | `DecisionPanel` | Decision | Verdict banner, recommended loan, rate, conditions, SHAP waterfall, stress test |
 | `FraudGraph` | Fraud Intel | D3 force-directed graph of transaction counterparties (cycles in red, shell entities in amber) |
 | `PromoterGraph` | Promoter Intel | D3 force-directed graph of promoter → director → litigation → lender network |
-| `AgentReports` | Agent Reports | Tabbed view: Audit flags, governance flags, key findings, news, sector summary |
+| `AgentReports` | Agent Reports | Tabbed view: Document Intelligence · Fraud · Promoter · Sector · **Research** · Verification |
 | `EvidenceViewer` | Evidence | Interactive 5-layer evidence graph (document → segment → feature → finding → decision) |
 | `CAMViewer` | CAM PDF | Download + inline preview of generated PDF |
 | `LLMSelector` | (header) | Toggle between CPU/GPU for Ollama LLM |
+
+**Research tab panels (new):**
+
+| Panel | Data source |
+|-------|-------------|
+| Macro Environment | `analysis.secondary_research` — Alpha Vantage rate/GDP/banking signals |
+| Credit Rating Intelligence | Finnhub + NewsAPI rating trend and agency signals |
+| News Sentiment | Multi-source articles with POSITIVE/NEGATIVE/NEUTRAL badges |
+| Data Triangulation | `analysis.triangulation` — CORROBORATED / DISCREPANCY / UNVERIFIED signals |
+| Pre-Cognitive Early Warnings | `analysis.precognitive` — CRITICAL/HIGH/MEDIUM severity cards with recommended actions |
 
 **Theme:**
 - Body background: `#080402` (near-black)
@@ -682,11 +813,24 @@ deciding → generating_cam → done
 
 ---
 
-## 8. Configuration & Thresholds
+## 9. Configuration & Thresholds
 
-All thresholds are centralized in `backend/config.py` and can be overridden via environment variables:
+All thresholds are centralized in `backend/config.py` and can be overridden via environment variables.
+
+**External API keys** are loaded from a `.env` file in the project root (never committed — listed in `.gitignore`):
+
+```
+NEWSAPI_KEY=<your_key>
+FINNHUB_KEY=<your_key>
+ALPHAVANTAGE_KEY=<your_key>
+```
 
 ```python
+# External API keys (research pipeline)
+NEWSAPI_KEY      = os.getenv("NEWSAPI_KEY", "")       # newsapi.org
+FINNHUB_KEY      = os.getenv("FINNHUB_KEY", "")       # finnhub.io
+ALPHAVANTAGE_KEY = os.getenv("ALPHAVANTAGE_KEY", "")  # alphavantage.co
+
 # LLM
 OLLAMA_BASE_URL   = "http://localhost:11434"   # env: OLLAMA_BASE_URL
 OLLAMA_MODEL      = "phi3:mini"                # env: OLLAMA_MODEL
@@ -719,7 +863,7 @@ BENFORD_CHI2_THRESHOLD     = 15.51 # p=0.05, df=8
 
 ---
 
-## 9. LLM Integration (Optional)
+## 10. LLM Integration (Optional)
 
 The system uses **Ollama** for optional LLM enrichment. When Ollama is not running or `USE_LLM=false`, every LLM call gracefully falls back to a deterministic rule-based equivalent.
 
@@ -750,19 +894,25 @@ export USE_LLM=true
 
 ---
 
-## 10. Setup & Running
+## 11. Setup & Running
 
 ### Prerequisites
 
 - Python 3.10+
 - Node.js 18+ (for frontend)
 - Tesseract OCR (for scanned PDFs)
+- API keys for NewsAPI, Finnhub, Alpha Vantage (optional but strongly recommended — all degrade to DuckDuckGo without them)
 
 ### Backend Setup
 
 ```bash
 # Clone and enter project
 cd credON_new
+
+# Create .env file with API keys (all optional, fall back to DuckDuckGo)
+echo "NEWSAPI_KEY=your_key_here" > .env
+echo "FINNHUB_KEY=your_key_here" >> .env
+echo "ALPHAVANTAGE_KEY=your_key_here" >> .env
 
 # Install Python dependencies
 pip install -r requirements.txt
@@ -795,22 +945,28 @@ The FastAPI backend serves the React production build as static files. Build the
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
+| `NEWSAPI_KEY` | `""` | NewsAPI.org — news headline scraping |
+| `FINNHUB_KEY` | `""` | Finnhub.io — company news + rating signals |
+| `ALPHAVANTAGE_KEY` | `""` | Alpha Vantage — macro NEWS_SENTIMENT feed |
 | `USE_LLM` | `false` | Enable Ollama LLM enrichment |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API endpoint |
 | `OLLAMA_MODEL` | `phi3:mini` | Model to use for inference |
 
+> All three API keys degrade gracefully to DuckDuckGo fallback when absent.
+
 ---
 
-## 11. Project Structure
+## 12. Project Structure
 
 ```
 credON_new/
 ├── run.py                          # Entry point — CLI with --demo, --train flags
 ├── requirements.txt
+├── .env                            # API keys (not committed — in .gitignore)
 │
 ├── backend/
 │   ├── main.py                     # FastAPI app, job store, pipeline orchestrator
-│   ├── config.py                   # All thresholds and constants
+│   ├── config.py                   # All thresholds, constants, API key loading
 │   └── llm.py                      # Ollama client wrapper (safe fallback)
 │
 ├── ingestion/
@@ -824,8 +980,12 @@ credON_new/
 │   └── financial_consistency_engine.py   # GST/Bank/ITR cross-validation
 │
 ├── research/
-│   ├── research_agent.py           # Parallel orchestrator (news + MCA + litig + sector)
-│   ├── news_scraper.py             # Headline scraping + sentiment scoring
+│   ├── research_agent.py           # 2-wave parallel orchestrator
+│   ├── news_scraper.py             # NewsAPI + Finnhub + DDGS multi-source
+│   ├── macro_intelligence.py       # Alpha Vantage + DDGS macro signals  ← NEW
+│   ├── credit_rating_scraper.py    # Finnhub + NewsAPI + DDGS rating signals  ← NEW
+│   ├── triangulation_engine.py     # External vs document signal cross-reference  ← NEW
+│   ├── precognitive_risk.py        # 7 early-warning signal types  ← NEW
 │   ├── litigation_detector.py      # Court case detection (DRT, NCLT, HC)
 │   ├── mca_parser.py               # MCA director/charge data extraction
 │   └── sector_analyzer.py          # Sector identification + risk baseline
@@ -860,8 +1020,8 @@ credON_new/
 │   └── decision_engine.py          # Verdict + loan structuring + Five Cs
 │
 ├── cam/
-│   ├── cam_generator.py            # 11-section CAM content assembly
-│   └── pdf_exporter.py             # ReportLab PDF rendering
+│   ├── cam_generator.py            # 13-section CAM content assembly (SWOT + 360° Research)
+│   └── pdf_exporter.py             # ReportLab PDF rendering (13 sections)
 │
 ├── graphs/
 │   ├── promoter_network_graph.py   # NetworkX graph serializers
@@ -881,7 +1041,7 @@ credON_new/
     │   │   ├── DecisionPanel.jsx
     │   │   ├── FraudGraph.jsx
     │   │   ├── PromoterGraph.jsx
-    │   │   ├── AgentReports.jsx
+    │   │   ├── AgentReports.jsx    # Research tab: 5 new panels
     │   │   ├── EvidenceViewer.jsx
     │   │   ├── CAMViewer.jsx
     │   │   ├── LLMSelector.jsx
@@ -895,7 +1055,7 @@ credON_new/
 
 ---
 
-## 12. Key Design Decisions
+## 13. Key Design Decisions
 
 **1. Hard rejects bypass ML entirely.**
 When circular trading score > 0.80, promoter risk > 0.80, or litigation severity > 0.75 is detected, the system rejects immediately without running the XGBoost model. This ensures deterministic enforcement of credit policy irrespective of model uncertainty.
@@ -903,14 +1063,23 @@ When circular trading score > 0.80, promoter risk > 0.80, or litigation severity
 **2. LLM is always optional.**
 Every LLM call in the codebase is wrapped in an `ollama_available()` guard with a deterministic fallback. The system produces identical structured outputs whether or not an LLM is running.
 
-**3. 60/40 rule-vs-ML blending.**
+**3. External APIs degrade gracefully.**
+All three research API integrations (NewsAPI, Finnhub, Alpha Vantage) fall back silently to DuckDuckGo when keys are missing or calls fail. The pipeline never hard-fails due to an external API outage.
+
+**4. 60/40 rule-vs-ML blending.**
 The final blended score weights rule-adjusted score at 60% and ML score at 40%. This prevents the black-box model from overriding clear policy violations while still benefiting from ML pattern recognition.
 
-**4. Job persistence across restarts.**
+**5. Job persistence across restarts.**
 Jobs are pickled to `uploads/jobs/*.pkl` immediately after any state change. On startup, all pkl files are loaded into the in-memory `JOBS` dict, so restart recovery is automatic.
 
-**5. Feature vector is always complete.**
+**6. Feature vector is always complete.**
 The Feature Engine provides `0.0` defaults for every feature. The sklearn pipeline applies median imputation. The XGBoost model always receives a full 25-dimensional vector regardless of how sparse the uploaded documents are.
 
-**6. Evidence graph enables auditability.**
+**7. Evidence graph enables auditability.**
 The 5-layer DAG (Document → Segment → Feature → Finding → Decision) satisfies RBI's model explainability guidance for AI-assisted credit decisions, allowing bank credit officers to trace any model output back to the exact document page.
+
+**8. Triangulation as a signal amplifier.**
+The TriangulationEngine does not directly adjust the credit score. Instead, it surfaces DISCREPANCY signals (where external and document data contradict each other) as high-confidence risk flags for human review, preventing over-reliance on any single data stream.
+
+**9. Pre-cognitive signals are leading, not lagging.**
+Unlike traditional credit checks that react to balance-sheet deterioration, the pre-cognitive layer detects converging stress patterns across macro, sentiment, rating, and structural dimensions — flagging risk weeks or months before it manifests in financials.
