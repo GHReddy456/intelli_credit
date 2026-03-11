@@ -5,6 +5,9 @@ Orchestrates the full pipeline via REST endpoints.
 import uuid
 import pickle
 import shutil
+import os
+import threading
+import time
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request, BackgroundTasks
@@ -40,6 +43,25 @@ app = FastAPI(
     version="1.0.0",
     description="Automated Credit Appraisal Memo generation for Indian corporates",
 )
+
+
+def _start_keep_alive():
+    """Ping self every 10 min so Render free-tier never sleeps."""
+    def _ping():
+        time.sleep(120)  # wait for server to fully start
+        base_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
+        if not base_url:
+            return  # not on Render, skip
+        import urllib.request
+        while True:
+            try:
+                urllib.request.urlopen(f"{base_url}/api/health", timeout=10)
+            except Exception:
+                pass
+            time.sleep(600)  # ping every 10 minutes
+    threading.Thread(target=_ping, daemon=True).start()
+
+_start_keep_alive()
 
 app.add_middleware(
     CORSMiddleware,

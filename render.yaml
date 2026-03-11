@@ -1,0 +1,20 @@
+﻿services:
+  - type: web
+    name: intelli-credit
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: GEMINI_API_KEY
+        value: AIzaSyDfYSGxM5Rrn_NyQ3rFoYtmeR1RD4nz7Vc
+      - key: GEMINI_MODEL
+        value: gemini-1.5-flash
+      - key: USE_LLM
+        value: "true"
+      - key: NEWSAPI_KEY
+        value: bd71ebb91d264de1baf581fe435828a9
+      - key: FINNHUB_KEY
+        value: d6ogoupr01qnu98i0o00d6ogoupr01qnu98i0o0g
+      - key: ALPHAVANTAGE_KEY
+        value: 1TOQ1QJ935HNVFAM
