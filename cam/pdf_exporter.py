@@ -723,15 +723,13 @@ class PDFExporter:
         ))
         pc_warns = pc.get("warnings", [])
         if pc_warns:
-            _sev_colors = {"CRITICAL": colors.HexColor("#C0392B"),
-                           "HIGH":     colors.HexColor("#E67E22"),
-                           "MEDIUM":   colors.HexColor("#2980B9")}
+            _sev_hex = {"CRITICAL": "#C0392B", "HIGH": "#E67E22", "MEDIUM": "#2980B9"}
             pc_data = [["Severity", "Signal", "Description", "Recommended Action"]]
             for w in pc_warns:
                 sev = w.get("severity", "MEDIUM")
-                sev_color = _sev_colors.get(sev, colors.black)
+                sev_color_hex = _sev_hex.get(sev, "#000000")
                 sev_para = Paragraph(
-                    f'<font color="#{"%02x%02x%02x" % tuple(int(sev_color.hexval()[1:][i:i+2],16) for i in (0,2,4))}"><b>{sev}</b></font>',
+                    f'<font color="{sev_color_hex}"><b>{sev}</b></font>',
                     body_style,
                 )
                 pc_data.append([

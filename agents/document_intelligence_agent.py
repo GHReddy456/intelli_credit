@@ -6,7 +6,7 @@ Extracts qualitative flags: audit issues, board disputes, going concern, related
 import re
 from typing import List, Dict, Any
 from loguru import logger
-from backend.config import USE_LLM, OLLAMA_BASE_URL, OLLAMA_MODEL
+from backend.config import USE_LLM
 from backend.llm import llm_call, gemini_available as ollama_available
 
 

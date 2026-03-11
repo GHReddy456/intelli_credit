@@ -43,9 +43,16 @@ class ResearchAgent:
             f_mca    = ex.submit(mca_parser.parse, company_name, segmented_docs)
             f_macro  = ex.submit(macro.analyze, sector_hint)
 
-            news_result  = f_news.result(timeout=45)
-            mca_result   = f_mca.result(timeout=30)
-            macro_result = f_macro.result(timeout=35)
+            def _safe_result(fut, timeout, default, name):
+                try:
+                    return fut.result(timeout=timeout)
+                except Exception as e:
+                    logger.warning(f"[ResearchAgent] {name} failed/timed out: {e}")
+                    return default
+
+            news_result  = _safe_result(f_news,  45, {"articles": []}, "NewsScraper")
+            mca_result   = _safe_result(f_mca,   30, {},                "MCAParser")
+            macro_result = _safe_result(f_macro, 35, {},                "MacroIntelligence")
 
             # ── Phase B: litigation + sector need news result first ───────────
             f_lit    = ex.submit(litigation_det.detect, company_name, segmented_docs, news_result)
@@ -55,9 +62,9 @@ class ResearchAgent:
             )
             f_cr = ex.submit(credit_ratings.scrape, company_name, sector_hint)
 
-            lit_result    = f_lit.result(timeout=40)
-            sector_result = f_sector.result(timeout=35)
-            cr_result     = f_cr.result(timeout=30)
+            lit_result    = _safe_result(f_lit,    40, {"cases": []},   "LitigationDetector")
+            sector_result = _safe_result(f_sector, 35, {},               "SectorAnalyzer")
+            cr_result     = _safe_result(f_cr,     45, {},               "CreditRatingScraper")
 
         # ── Aggregate flags ───────────────────────────────────────────────────
         all_flags = (

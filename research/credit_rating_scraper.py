@@ -48,11 +48,20 @@ class CreditRatingScraper:
             f_ddgs    = ex.submit(self._ddgs_rating,    company_name, sector)
 
             all_hits: List[Dict] = []
-            for f in concurrent.futures.as_completed([f_finnhub, f_newsapi, f_ddgs], timeout=30):
-                try:
-                    all_hits.extend(f.result())
-                except Exception as e:
-                    logger.warning(f"[CreditRating] Source failed: {e}")
+            try:
+                for f in concurrent.futures.as_completed([f_finnhub, f_newsapi, f_ddgs], timeout=30):
+                    try:
+                        all_hits.extend(f.result())
+                    except Exception as e:
+                        logger.warning(f"[CreditRating] Source failed: {e}")
+            except concurrent.futures.TimeoutError:
+                logger.warning("[CreditRating] Timed out waiting for sources; using partial results")
+                for f in [f_finnhub, f_newsapi, f_ddgs]:
+                    if f.done():
+                        try:
+                            all_hits.extend(f.result())
+                        except Exception as e:
+                            logger.warning(f"[CreditRating] Source failed: {e}")
 
         company_hits = [h for h in all_hits if h.get("scope") == "company"]
         sector_hits  = [h for h in all_hits if h.get("scope") == "sector"]
