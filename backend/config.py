@@ -14,12 +14,10 @@ CAM_DIR    = BASE_DIR / "cam_outputs"
 for _d in (UPLOAD_DIR, MODEL_DIR, CAM_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
-# ── LLM (optional - Ollama) ─────────────────────────────────────────────────
-# phi3:mini is 3.8B params (~2.3 GB RAM), runs on CPU without a GPU.
-# Alternatives (smaller/faster on CPU): qwen2:0.5b (394 MB), gemma3:1b (815 MB)
-OLLAMA_BASE_URL   = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL      = os.getenv("OLLAMA_MODEL",    "phi3:mini")
-USE_LLM           = os.getenv("USE_LLM", "false").lower() == "true"
+# ── LLM — Google Gemini API ─────────────────────────────────────────────────
+GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL      = os.getenv("GEMINI_MODEL",   "gemini-1.5-flash")
+USE_LLM           = bool(os.getenv("GEMINI_API_KEY", ""))
 
 # ── Financial Verification Thresholds ───────────────────────────────────────
 GST_BANK_MISMATCH_THRESHOLD   = 0.15   # 15% tolerance

@@ -10,7 +10,7 @@ from backend.config import (
     APPROVE_THRESHOLD, CONDITIONAL_THRESHOLD,
     BASE_INTEREST_RATE, LOAN_TO_TURNOVER_RATIO,
 )
-from backend.llm import llm_call, ollama_available
+from backend.llm import llm_call, gemini_available as ollama_available
 
 
 class DecisionEngine:

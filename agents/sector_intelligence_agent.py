@@ -4,7 +4,7 @@ Synthesises sector_analyzer output + RBI/SEBI news into sector_conditions_score.
 """
 from typing import List, Dict, Any
 from loguru import logger
-from backend.llm import llm_call, ollama_available
+from backend.llm import llm_call, gemini_available as ollama_available
 
 
 class SectorIntelligenceAgent:

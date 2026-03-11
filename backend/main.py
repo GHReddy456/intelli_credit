@@ -219,29 +219,25 @@ async def model_metrics():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LLM CONFIG  (CPU / GPU toggle)
+# LLM CONFIG  (Gemini status)
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/api/llm/config")
 def get_llm_config():
     cfg = _llm.get_config()
     return {
-        "device":         _llm.get_device(),
-        "model":          cfg["model"],
-        "label":          cfg["label"],
-        "ollama_running": _llm.ollama_available(),
+        "device":          _llm.get_device(),
+        "model":           cfg["model"],
+        "label":           cfg["label"],
+        "gemini_available": _llm.gemini_available(),
     }
 
 
 @app.post("/api/llm/config")
 async def set_llm_config(request: Request):
-    body = await request.json()
-    device = str(body.get("device", "")).strip().lower()
-    if device not in ("cpu", "gpu"):
-        raise HTTPException(400, "device must be 'cpu' or 'gpu'")
-    _llm.set_device(device)
+    # No-op for Gemini (no device toggling needed); kept for API compatibility
     cfg = _llm.get_config()
     return {
-        "device": device,
+        "device": cfg["device"],
         "model":  cfg["model"],
         "label":  cfg["label"],
     }

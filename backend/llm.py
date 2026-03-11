@@ -1,146 +1,102 @@
 """
-LLM Helper — Ollama wrapper with manual CPU / GPU selection.
+LLM Helper — Google Gemini API integration.
 
-Device is chosen by the user via the frontend toggle (POST /api/llm/config).
-No auto-detection — the user knows their hardware best.
-
-Device configs (hardcoded for target hardware):
-  CPU  → phi3:mini     (2.3 GB, ~15-20 tok/s on i7-13th gen)
-  GPU  → llama3.1:8b   (4.7 GB Q4, ~70 tok/s on RTX 4060 8 GB VRAM)
+Replaces the Ollama backend with Gemini 1.5 Flash, which runs on Railway
+(no local GPU required). Falls back to rule-based output when the key is
+missing or the API call fails.
 
 Usage:
-  from backend.llm import llm_call, ollama_available, get_device, set_device
+  from backend.llm import llm_call, gemini_available
+  # ollama_available is kept as an alias for backward compatibility
 """
 import os
-from functools import lru_cache
 from typing import Optional
 from loguru import logger
 
 try:
-    import requests as _requests
+    import google.generativeai as genai
+    _GENAI_AVAILABLE = True
 except ImportError:
-    _requests = None
+    _GENAI_AVAILABLE = False
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL   = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
-# ── Manually-set device (changed at runtime via set_device()) ──────────────────
-_DEVICE: str = "cpu"   # default; frontend can change to "gpu"
-
-# ── Fixed configs per device ───────────────────────────────────────────────────
-_CONFIGS = {
-    "cpu": {
-        "model":      "phi3:mini",
-        "num_gpu":    0,            # all layers on CPU
-        "num_thread": os.cpu_count() or 8,
-        "num_ctx":    2048,
-        "timeout":    240,
-        "label":      "CPU — phi3:mini (i7-13th gen, ~15-20 tok/s)",
-    },
-    "gpu": {
-        "model":      "llama3.1:8b",
-        "num_gpu":    -1,           # all layers on GPU
-        "num_ctx":    4096,
-        "timeout":    90,
-        "label":      "GPU — llama3.1:8b (RTX 4060 8 GB, ~70 tok/s)",
-    },
-}
-
-# System prompt injected into every credit-analysis call
 _SYSTEM = (
     "You are an expert Indian credit analyst with 20 years of corporate lending experience. "
     "Be concise and factual. Use RBI/Basel/Indian-banking terminology. "
     "Reply in plain English only. No markdown, no headers, no bullet points unless explicitly asked."
 )
 
+_client = None
 
-# ── Device management ──────────────────────────────────────────────────────────
+def _get_client():
+    global _client
+    if _client is not None:
+        return _client
+    if not _GENAI_AVAILABLE or not GEMINI_API_KEY:
+        return None
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        _client = genai.GenerativeModel(
+            model_name=GEMINI_MODEL,
+            system_instruction=_SYSTEM,
+            generation_config={
+                "temperature": 0.1,
+                "top_p": 0.9,
+                "max_output_tokens": 500,
+            },
+        )
+        logger.info(f"[LLM] Gemini client initialised — model={GEMINI_MODEL}")
+        return _client
+    except Exception as e:
+        logger.warning(f"[LLM] Gemini init failed: {e}")
+        return None
 
-def set_device(device: str) -> None:
-    """Switch between 'cpu' and 'gpu'. Clears Ollama availability cache."""
-    global _DEVICE
-    if device not in _CONFIGS:
-        raise ValueError(f"device must be one of {list(_CONFIGS)}, got {device!r}")
-    _DEVICE = device
-    ollama_available.cache_clear()
-    logger.info(f"[LLM] Device switched to {device.upper()} — model={_CONFIGS[device]['model']}")
+
+def gemini_available() -> bool:
+    """Returns True if Gemini API key is set and lib is installed."""
+    return bool(_GENAI_AVAILABLE and GEMINI_API_KEY)
+
+
+# Backward-compatibility alias used throughout the codebase
+def ollama_available() -> bool:
+    return gemini_available()
 
 
 def get_device() -> str:
-    return _DEVICE
+    return "gemini"
+
+
+def set_device(device: str) -> None:
+    # No-op — Gemini is always cloud; kept for API compatibility
+    logger.info(f"[LLM] set_device('{device}') ignored — using Gemini API")
 
 
 def get_config() -> dict:
-    return _CONFIGS[_DEVICE].copy()
+    return {
+        "model":  GEMINI_MODEL,
+        "device": "cloud",
+        "label":  f"Gemini — {GEMINI_MODEL} (Google AI)",
+        "gemini_available": gemini_available(),
+    }
 
-
-# ── Ollama availability ────────────────────────────────────────────────────────
-
-@lru_cache(maxsize=1)
-def ollama_available() -> bool:
-    """Pings Ollama once; result cached until set_device() clears it."""
-    if _requests is None:
-        return False
-    try:
-        r = _requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=3)
-        if r.status_code == 200:
-            tags = [m.get("name", "") for m in r.json().get("models", [])]
-            cfg  = get_config()
-            logger.info(
-                f"[LLM] Ollama running — device={_DEVICE.upper()}, "
-                f"model={cfg['model']}, pulled={tags or 'none'}"
-            )
-            return True
-    except Exception:
-        pass
-    logger.info("[LLM] Ollama not reachable — LLM features disabled (rule-based fallbacks active)")
-    return False
-
-
-# ── Core call ──────────────────────────────────────────────────────────────────
 
 def llm_call(prompt: str, max_tokens: int = 200, model: str = None) -> Optional[str]:
     """
-    Send a prompt to Ollama. Returns None on failure — all callers handle None gracefully.
-
-    CPU mode: caps max_tokens at 150 to keep latency reasonable.
-    GPU mode: uses the full requested token count.
+    Send a prompt to Gemini 1.5 Flash.
+    Returns the text response, or None on failure.
+    All callers already handle None gracefully with rule-based fallbacks.
     """
-    if not ollama_available():
+    client = _get_client()
+    if client is None:
+        logger.debug("[LLM] Gemini unavailable — using rule-based fallback")
         return None
-
-    cfg     = get_config()
-    m       = model or cfg["model"]
-    timeout = cfg["timeout"]
-
-    # CPU: cap tokens to keep response time under ~30s
-    if _DEVICE == "cpu":
-        max_tokens = min(max_tokens, 150)
-
-    full_prompt = f"{_SYSTEM}\n\n{prompt}"
-
-    options: dict = {
-        "num_predict": max_tokens,
-        "temperature": 0.1,
-        "top_p":       0.9,
-        "num_gpu":     cfg["num_gpu"],
-        "num_ctx":     cfg["num_ctx"],
-    }
-    if _DEVICE == "cpu":
-        options["num_thread"] = cfg["num_thread"]
-
     try:
-        resp = _requests.post(
-            f"{OLLAMA_BASE_URL}/api/generate",
-            json={"model": m, "prompt": full_prompt, "stream": False, "options": options},
-            timeout=timeout,
-        )
-        if resp.status_code == 200:
-            text = resp.json().get("response", "").strip()
-            logger.debug(f"[LLM] {m} ({_DEVICE.upper()}) → {len(text)} chars")
-            return text or None
-        logger.warning(f"[LLM] Ollama HTTP {resp.status_code}")
-    except _requests.exceptions.Timeout:
-        logger.warning(f"[LLM] Timeout after {timeout}s — model may still be loading")
+        resp = client.generate_content(prompt)
+        text = resp.text.strip() if resp.text else ""
+        logger.debug(f"[LLM] Gemini → {len(text)} chars")
+        return text or None
     except Exception as e:
-        logger.warning(f"[LLM] Call failed: {e}")
-    return None
+        logger.warning(f"[LLM] Gemini call failed: {e}")
+        return None

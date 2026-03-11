@@ -1,7 +1,7 @@
 # ============================================================
 # INTELLI-CREDIT v2 — Streamlined Requirements
 # Architecture: FastAPI + XGBoost + SHAP + NetworkX + ReportLab
-# Zero API keys required. Ollama optional.
+# LLM: Google Gemini 1.5 Flash API
 # ============================================================
 
 # ── Core API ─────────────────────────────────────────────────
@@ -52,5 +52,5 @@ python-dotenv>=1.0.0
 pyyaml>=6.0.0
 tenacity>=8.2.0
 
-# ── LLM — OPTIONAL (uncomment if using Ollama locally) ───────
-# ollama>=0.1.7
+# ── LLM — Google Gemini API ──────────────────────────────────
+google-generativeai>=0.7.0
