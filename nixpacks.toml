@@ -1,2 +1,2 @@
 [phases.setup]
-nixPkgs = ["tesseract", "poppler_utils", "libgomp"]
+nixPkgs = ["tesseract", "poppler_utils"]
