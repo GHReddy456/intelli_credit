@@ -16,11 +16,15 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 
 def train_model():
+    """Train/load model — runs in background thread to not block startup."""
     print("[boot] Training / loading ML model…")
-    from models.credit_model import CreditModel
-    from backend.config import FEATURE_NAMES
-    CreditModel()
-    print(f"[boot] Model ready. Features: {len(FEATURE_NAMES)}")
+    try:
+        from models.credit_model import CreditModel
+        from backend.config import FEATURE_NAMES
+        CreditModel()
+        print(f"[boot] Model ready. Features: {len(FEATURE_NAMES)}")
+    except Exception as e:
+        print(f"[boot] Model training deferred: {e}")
 
 
 def generate_demo():
@@ -34,6 +38,8 @@ def generate_demo():
 
 
 def start_server(host="0.0.0.0", port=8000, reload=False):
+    import threading
+    threading.Thread(target=train_model, daemon=True).start()
     import uvicorn
     print(f"[boot] Starting Intelli-Credit API on http://{host}:{port}")
     print(f"[boot] API docs -> http://localhost:{port}/docs")
@@ -70,7 +76,7 @@ def main():
             os.remove(mpath)
             print("[boot] Removed cached model — will retrain")
 
-    train_model()
+    train_model()  # still called for --train/--demo modes
     start_server(port=args.port, reload=args.reload)
 
 
