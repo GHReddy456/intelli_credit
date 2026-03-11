@@ -7,7 +7,7 @@ import pickle
 import shutil
 from pathlib import Path
 from typing import Optional
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -247,7 +247,7 @@ async def set_llm_config(request: Request):
 # PIPELINE START (after HITL classification review)
 # ─────────────────────────────────────────────────────────────────────────────
 @app.post("/api/pipeline/{job_id}/start")
-async def start_pipeline(job_id: str, request: Request):
+async def start_pipeline(job_id: str, request: Request, background_tasks: BackgroundTasks):
     """
     Start the full analysis pipeline after the user has approved
     the document classifications from the HITL review step.
@@ -258,8 +258,11 @@ async def start_pipeline(job_id: str, request: Request):
     if job["status"] not in ("classified", "error"):
         raise HTTPException(400, f"Cannot start pipeline: status={job['status']}")
 
-    body = await request.json()
-    approved = body.get("classifications", [])
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    approved = body.get("classifications", []) if isinstance(body, dict) else []
     if approved:
         job["classifications"] = approved
 
@@ -268,8 +271,7 @@ async def start_pipeline(job_id: str, request: Request):
     job["error"] = None
     _persist_job(job_id)
 
-    import asyncio
-    asyncio.create_task(_run_pipeline(job_id))
+    background_tasks.add_task(_sync_pipeline, job_id)
 
     return {"job_id": job_id, "status": "queued"}
 
