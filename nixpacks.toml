@@ -1,2 +1,3 @@
+# Dockerfile is used for Railway — nixpacks.toml kept minimal as fallback
 [phases.setup]
-nixPkgs = ["python312", "python312Packages.pip", "tesseract", "poppler_utils"]
+nixPkgs = ["python312"]
