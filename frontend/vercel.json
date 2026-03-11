@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://credon-production.up.railway.app/api/:path*"
+      "destination": "https://credon-production-e5d8.up.railway.app/api/:path*"
     }
   ]
 }
